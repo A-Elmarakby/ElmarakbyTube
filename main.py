@@ -5,7 +5,7 @@ import threading
 import os
 import glob
 import subprocess
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import imageio_ffmpeg
 import concurrent.futures
 
@@ -569,7 +569,6 @@ def _download_process(rows_to_download, quality, save_path):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([row_data['url']])
                 
-            # FIX #1: Forcing 100% and Green color if it completes successfully without hitting "already_exists"
             if is_downloading and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
@@ -616,11 +615,66 @@ def download_worker():
         
     is_downloading = False
 
+# ==================== Custom Centered Dialogs ====================
+def center_toplevel(top, width, height):
+    app.update_idletasks()
+    x = app.winfo_x() + (app.winfo_width() // 2) - (width // 2)
+    y = app.winfo_y() + (app.winfo_height() // 2) - (height // 2)
+    top.geometry(f"{width}x{height}+{x}+{y}")
+
+def ask_conversion_speed():
+    dialog = ctk.CTkToplevel(app)
+    dialog.title("Conversion Speed")
+    center_toplevel(dialog, 350, 150)
+    dialog.transient(app) 
+    dialog.grab_set() 
+    
+    result = ["cancel"] 
+    def set_res(val):
+        result[0] = val
+        dialog.destroy()
+        
+    lbl = ctk.CTkLabel(dialog, text="Choose conversion speed:", font=("Arial", 14, "bold"))
+    lbl.pack(pady=20)
+    
+    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    btn_frame.pack()
+    
+    ctk.CTkButton(btn_frame, text="Fast", fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res("fast")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text="Slow", fg_color="#ff4444", hover_color="#cc0000", width=90, command=lambda: set_res("slow")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text="Cancel", fg_color="#555", hover_color="#333", width=90, command=lambda: set_res("cancel")).pack(side="left", padx=10)
+    
+    app.wait_window(dialog)
+    return result[0]
+
+def custom_ask_yes_no(title, message):
+    dialog = ctk.CTkToplevel(app)
+    dialog.title(title)
+    center_toplevel(dialog, 450, 150)
+    dialog.transient(app)
+    dialog.grab_set()
+    
+    result = [False]
+    def set_res(val):
+        result[0] = val
+        dialog.destroy()
+        
+    lbl = ctk.CTkLabel(dialog, text=message, font=("Arial", 14, "bold"))
+    lbl.pack(pady=20, padx=20)
+    
+    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    btn_frame.pack()
+    
+    ctk.CTkButton(btn_frame, text="Yes", fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res(True)).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text="No", fg_color="#ff4444", hover_color="#cc0000", width=90, command=lambda: set_res(False)).pack(side="left", padx=10)
+    
+    app.wait_window(dialog)
+    return result[0]
+
 # ==================== The New Convert Worker ====================
 def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_first):
     global is_converting, current_ffmpeg_process
     
-    # 1. Download missing files if requested
     if do_download_first:
         global is_downloading
         is_downloading = True
@@ -628,13 +682,12 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         _download_process(selected_rows, quality, save_path)
         is_downloading = False
         
-        if not is_converting: # Check if user stopped it
+        if not is_converting: 
             app.after(0, lambda: update_global_status("Conversion canceled.", "orange", ""))
             return
             
-    # 2. Swap Buttons to "Stop Convert"
     app.after(0, lambda: convert_btn.pack_forget())
-    app.after(0, lambda: stop_convert_btn.pack(side="left"))
+    app.after(0, lambda: stop_convert_btn.pack(side="left", padx=10))
     
     files_to_delete = []
     app.after(0, lambda: update_global_status("Starting conversion...", "#00a8ff", ""))
@@ -656,7 +709,6 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             
         output_file = os.path.splitext(input_file)[0] + '.mp4'
         
-        # 3. UI Update: Indeterminate bar & Blue text
         app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converting...", text_color="#00a8ff"))
         app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="---", text_color="#00a8ff"))
         app.after(0, lambda r=row_data: r['progress'].configure(mode="indeterminate", progress_color="#00a8ff"))
@@ -665,7 +717,6 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         update_status_msg = "Remuxing" if speed_choice == "fast" else "Re-encoding"
         app.after(0, lambda: update_global_status(f"Converting ({update_status_msg})...", "#00a8ff", ""))
         
-        # 4. FFmpeg Subprocess execution (Killable)
         cmd = [imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-i', input_file]
         if speed_choice == "fast":
             cmd.extend(['-c', 'copy'])
@@ -675,7 +726,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         
         try:
             current_ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            current_ffmpeg_process.wait() # Wait until FFmpeg finishes or is killed
+            current_ffmpeg_process.wait() 
             
             if not is_converting: 
                 raise Exception("KILLED_BY_USER")
@@ -702,16 +753,14 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         finally:
             current_ffmpeg_process = None
             
-    # Swap Buttons back
     app.after(0, lambda: stop_convert_btn.pack_forget())
-    app.after(0, lambda: convert_btn.pack(side="left"))
+    app.after(0, lambda: convert_btn.pack(side="left", padx=10))
     
     if is_converting:
         app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
-        # 5. Final Cleanup Prompt
         if files_to_delete:
             def ask_cleanup():
-                if messagebox.askyesno("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?"):
+                if custom_ask_yes_no("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?"):
                     for f in files_to_delete:
                         try: os.remove(f)
                         except: pass
@@ -720,40 +769,22 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     else:
         app.after(0, lambda: update_global_status("Conversion stopped by user.", "orange", ""))
 
-# ==================== Custom Speed Prompt ====================
-def ask_conversion_speed():
-    """Custom Dialog for Conversion Speed"""
-    dialog = ctk.CTkToplevel(app)
-    dialog.title("Conversion Speed")
-    dialog.geometry("350x150")
-    dialog.transient(app) # Keeps it on top of main window
-    dialog.grab_set() # Disables main window until choice is made
-    
-    result = ["cancel"] # Stored in list to be modified by inner function
-    
-    def set_res(val):
-        result[0] = val
-        dialog.destroy()
-        
-    lbl = ctk.CTkLabel(dialog, text="Choose conversion speed:", font=("Arial", 14, "bold"))
-    lbl.pack(pady=20)
-    
-    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-    btn_frame.pack()
-    
-    ctk.CTkButton(btn_frame, text="Fast", fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res("fast")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text="Slow", fg_color="#ff4444", hover_color="#cc0000", width=90, command=lambda: set_res("slow")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text="Cancel", fg_color="#555", hover_color="#333", width=90, command=lambda: set_res("cancel")).pack(side="left", padx=10)
-    
-    app.wait_window(dialog)
-    return result[0]
-
 # ==================== Bottom Section (Download, Convert & Cancel) ====================
 bottom_frame = ctk.CTkFrame(app, fg_color="transparent")
-bottom_frame.pack(pady=10, side="bottom")
+bottom_frame.pack(pady=10, side="bottom") 
+
+# Container to keep everything centered
+center_actions_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+center_actions_frame.pack()
 
 def on_download_click():
     threading.Thread(target=download_worker, daemon=True).start()
+
+def on_cancel_download_click():
+    global is_downloading
+    if is_downloading:
+        is_downloading = False
+        update_global_status("Canceling download... please wait.", "orange", "")
 
 def on_convert_click():
     global is_converting
@@ -785,10 +816,7 @@ def on_convert_click():
             
     do_download_first = False
     if needs_download:
-        dl_choice = messagebox.askyesno(
-            "Download Required", 
-            "Some selected videos are not downloaded yet.\nDo you want to download them first?"
-        )
+        dl_choice = custom_ask_yes_no("Download Required", "Some selected videos are not downloaded yet.\nDo you want to download them first?")
         if not dl_choice:
             update_global_status("Conversion canceled by user.", "orange", "")
             return
@@ -798,7 +826,6 @@ def on_convert_click():
     threading.Thread(target=convert_worker, args=(speed_choice, selected_rows, save_path, quality, do_download_first), daemon=True).start()
 
 def on_stop_convert_click():
-    """Kills the active FFmpeg process"""
     global is_converting, current_ffmpeg_process
     is_converting = False
     if current_ffmpeg_process:
@@ -806,22 +833,20 @@ def on_stop_convert_click():
         except: pass
     update_global_status("Stopping conversion... please wait.", "orange", "")
 
-def on_cancel_download_click():
-    global is_downloading
-    if is_downloading:
-        is_downloading = False
-        update_global_status("Canceling download... please wait.", "orange", "")
+# 1. Download Selected
+ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#840284", hover_color="#6b016b", command=on_download_click).pack(side="left", padx=10)
 
-ctk.CTkButton(bottom_frame, text="Download Selected", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#840284", hover_color="#6b016b", command=on_download_click).pack(side="left", padx=10)
+# 2. Cancel Download
+ctk.CTkButton(center_actions_frame, text="Cancel Download", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#FF6600", hover_color="#cc5200", command=on_cancel_download_click).pack(side="left", padx=10)
 
-convert_action_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
-convert_action_frame.pack(side="left", padx=10)
+# 3. Convert / Stop Convert Frame
+convert_action_frame = ctk.CTkFrame(center_actions_frame, fg_color="transparent")
+convert_action_frame.pack(side="left")
 
 convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#0086cc", hover_color="#006bb3", command=on_convert_click)
-convert_btn.pack(side="left")
+convert_btn.pack(side="left", padx=10)
 
 stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#ff4444", hover_color="#cc0000", command=on_stop_convert_click)
-
-ctk.CTkButton(bottom_frame, text="Cancel Download", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#FF6600", hover_color="#cc5200", command=on_cancel_download_click).pack(side="left", padx=10)
+# Note: stop_convert_btn is purposely NOT packed here to remain hidden initially
 
 app.mainloop()
