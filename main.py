@@ -1,8 +1,11 @@
 import customtkinter as ctk
 import yt_dlp
+from yt_dlp.utils import sanitize_filename
 import threading
 import os
-from tkinter import filedialog
+import glob
+import subprocess
+from tkinter import filedialog, messagebox
 import imageio_ffmpeg
 import concurrent.futures
 
@@ -17,7 +20,9 @@ video_rows = []
 is_fetching_sizes = False 
 consecutive_errors = 0 
 error_lock = threading.Lock()
-is_downloading = False # Global flag to control downloading state
+is_downloading = False 
+is_converting = False
+current_ffmpeg_process = None
 
 # --- Custom Logger to hide YouTube errors in the Terminal ---
 class SilentLogger:
@@ -151,24 +156,6 @@ global_status_label.pack(side="left", padx=(20, 5))
 global_warning_label = ctk.CTkLabel(status_bar, text="", font=("Arial", 12, "bold"), text_color="#ff4444")
 global_warning_label.pack(side="left")
 
-# ==================== Bottom Section (Download & Cancel) ====================
-bottom_frame = ctk.CTkFrame(app, fg_color="transparent")
-bottom_frame.pack(pady=10, side="bottom")
-
-def on_download_click():
-    """Start download in a background thread"""
-    threading.Thread(target=download_worker, daemon=True).start()
-
-def on_cancel_download_click():
-    """Trigger the global flag to stop downloading"""
-    global is_downloading
-    if is_downloading:
-        is_downloading = False
-        update_global_status("Canceling download... please wait.", "orange", "")
-
-ctk.CTkButton(bottom_frame, text="Download Selected", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#840284", hover_color="#6b016b", command=on_download_click).pack(side="left", padx=10)
-ctk.CTkButton(bottom_frame, text="Cancel Download", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#FF6600", hover_color="#cc5200", command=on_cancel_download_click).pack(side="left", padx=10)
-
 # ==================== UI Safety Helpers ====================
 def safe_ui_update(widget, **kwargs):
     if widget and widget.winfo_exists():
@@ -297,7 +284,7 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
         "percent_label": percent_lbl,
         "url": vid_url,
         "bytes_size": -1,
-        "dl_state": "ready" # Track internal status to avoid UI reading errors
+        "dl_state": "ready" 
     })
 
 # ==================== Size Calculation Engine ====================
@@ -486,44 +473,39 @@ def on_search_click():
 
 ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color="#840284", hover_color="#6b016b", command=on_search_click).pack(side="left")
 
-# ==================== Download Engine ====================
-def download_worker():
+# ==================== Core Download / Convert Helpers ====================
+def find_downloaded_file(save_path, title):
+    sanitized = sanitize_filename(title)
+    
+    for ext in ['.mkv', '.webm', '.mp4', '.m4a']:
+        p = os.path.join(save_path, f"{sanitized}{ext}")
+        if os.path.exists(p): return p
+        
+    try:
+        safe_prefix = sanitized[:15] 
+        search_pattern = os.path.join(save_path, f"*{safe_prefix}*")
+        files = glob.glob(search_pattern)
+        for f in files:
+            if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a']) and not f.endswith('.part'):
+                return f
+    except: pass
+    return None
+
+def _download_process(rows_to_download, quality, save_path):
     global is_downloading
     
-    save_path = path_entry.get()
-    if not save_path or not os.path.isdir(save_path):
-        app.after(0, lambda: update_global_status("Error: Please select a valid Save Path first!", "red", ""))
-        return
-
-    selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
-    if not selected_rows:
-        app.after(0, lambda: update_global_status("Error: No videos selected to download!", "red", ""))
-        return
-
-    quality = quality_combo.get()
-    if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        app.after(0, lambda: update_global_status("Error: Please select a quality first!", "red", ""))
-        return
-
-    is_downloading = True
-    app.after(0, lambda: update_global_status(f"Starting download for {len(selected_rows)} videos...", "#FF6600", ""))
-
     format_str = get_ydl_format_string(quality)
     postprocessors = []
-
     if "Audio Only" in quality:
         postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
 
-    for row_data in selected_rows:
-        if not is_downloading:
-            break 
-            
+    for row_data in rows_to_download:
+        if not is_downloading: break 
         if not row_data['frame'].winfo_exists(): continue 
         
         row_data['dl_state'] = 'preparing'
         app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color="#FF6600"))
         
-        # --- Smart Checker: Detects if file already exists ---
         class DownloadLogger:
             def debug(self, msg):
                 if "has already been downloaded" in msg or "already exists" in msg:
@@ -536,8 +518,6 @@ def download_worker():
 
         def progress_hook(d, r=row_data):
             global is_downloading
-            
-            # --- Strict Cancel Logic ---
             if not is_downloading:
                 r['dl_state'] = 'canceled'
                 app.after(0, lambda: safe_ui_update(r['status_label'], text="Canceled", text_color="#ff4444"))
@@ -552,7 +532,6 @@ def download_worker():
                 downloaded = d.get('downloaded_bytes', 0)
                 if total > 0:
                     percent = downloaded / total
-                    
                     app.after(0, lambda: safe_progress_update(r['progress'], percent))
                     app.after(0, lambda: safe_ui_update(r['percent_label'], text=f"{int(percent*100)}%"))
                     
@@ -579,8 +558,8 @@ def download_worker():
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': True,
-            'continuedl': True, # Explicitly enable Resume feature
-            'logger': DownloadLogger(), # Attach the smart checker
+            'continuedl': True, 
+            'logger': DownloadLogger(), 
             'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe() 
         }
         if postprocessors:
@@ -590,13 +569,15 @@ def download_worker():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([row_data['url']])
                 
+            # FIX #1: Forcing 100% and Green color if it completes successfully without hitting "already_exists"
             if is_downloading and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
+                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
+                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
                 
         except Exception:
             if not is_downloading:
-                # Cancel fallback check
                 row_data['dl_state'] = 'canceled'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color="#ff4444"))
                 app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
@@ -605,11 +586,242 @@ def download_worker():
                 row_data['dl_state'] = 'failed'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color="#ff4444"))
 
+def download_worker():
+    global is_downloading
+    save_path = path_entry.get()
+    
+    if not save_path or not os.path.isdir(save_path):
+        app.after(0, lambda: update_global_status("Error: Please select a valid Save Path first!", "red", ""))
+        return
+
+    selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    if not selected_rows:
+        app.after(0, lambda: update_global_status("Error: No videos selected to download!", "red", ""))
+        return
+
+    quality = quality_combo.get()
+    if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
+        app.after(0, lambda: update_global_status("Error: Please select a quality first!", "red", ""))
+        return
+
+    is_downloading = True
+    app.after(0, lambda: update_global_status(f"Starting download for {len(selected_rows)} videos...", "#FF6600", ""))
+
+    _download_process(selected_rows, quality, save_path)
+
     if is_downloading:
         app.after(0, lambda: update_global_status("Downloads finished.", "#28a745", ""))
     else:
         app.after(0, lambda: update_global_status("Downloads canceled by user.", "orange", ""))
         
     is_downloading = False
+
+# ==================== The New Convert Worker ====================
+def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_first):
+    global is_converting, current_ffmpeg_process
+    
+    # 1. Download missing files if requested
+    if do_download_first:
+        global is_downloading
+        is_downloading = True
+        app.after(0, lambda: update_global_status("Downloading missing files...", "#FF6600", ""))
+        _download_process(selected_rows, quality, save_path)
+        is_downloading = False
+        
+        if not is_converting: # Check if user stopped it
+            app.after(0, lambda: update_global_status("Conversion canceled.", "orange", ""))
+            return
+            
+    # 2. Swap Buttons to "Stop Convert"
+    app.after(0, lambda: convert_btn.pack_forget())
+    app.after(0, lambda: stop_convert_btn.pack(side="left"))
+    
+    files_to_delete = []
+    app.after(0, lambda: update_global_status("Starting conversion...", "#00a8ff", ""))
+    
+    for row_data in selected_rows:
+        if not is_converting: break 
+        if not row_data['frame'].winfo_exists(): continue 
+        
+        input_file = find_downloaded_file(save_path, row_data['title'])
+        if not input_file:
+            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Not Found", text_color="#ff4444"))
+            continue
+            
+        if input_file.endswith('.mp4'):
+            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Already MP4", text_color="#28a745"))
+            app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
+            app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+            continue
+            
+        output_file = os.path.splitext(input_file)[0] + '.mp4'
+        
+        # 3. UI Update: Indeterminate bar & Blue text
+        app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converting...", text_color="#00a8ff"))
+        app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="---", text_color="#00a8ff"))
+        app.after(0, lambda r=row_data: r['progress'].configure(mode="indeterminate", progress_color="#00a8ff"))
+        app.after(0, lambda r=row_data: r['progress'].start())
+        
+        update_status_msg = "Remuxing" if speed_choice == "fast" else "Re-encoding"
+        app.after(0, lambda: update_global_status(f"Converting ({update_status_msg})...", "#00a8ff", ""))
+        
+        # 4. FFmpeg Subprocess execution (Killable)
+        cmd = [imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-i', input_file]
+        if speed_choice == "fast":
+            cmd.extend(['-c', 'copy'])
+        else:
+            cmd.extend(['-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac'])
+        cmd.append(output_file)
+        
+        try:
+            current_ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            current_ffmpeg_process.wait() # Wait until FFmpeg finishes or is killed
+            
+            if not is_converting: 
+                raise Exception("KILLED_BY_USER")
+                
+            if current_ffmpeg_process.returncode != 0:
+                raise Exception("FFMPEG_ERROR")
+            
+            app.after(0, lambda r=row_data: r['progress'].stop())
+            app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color="#FF6600"))
+            app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
+            app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converted", text_color="#28a745"))
+            
+            files_to_delete.append(input_file)
+        except Exception:
+            app.after(0, lambda r=row_data: r['progress'].stop())
+            app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color="#FF6600"))
+            if not is_converting:
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color="#ff4444"))
+                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
+                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color="#ff4444"))
+            else:
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Convert Failed", text_color="#ff4444"))
+        finally:
+            current_ffmpeg_process = None
+            
+    # Swap Buttons back
+    app.after(0, lambda: stop_convert_btn.pack_forget())
+    app.after(0, lambda: convert_btn.pack(side="left"))
+    
+    if is_converting:
+        app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
+        # 5. Final Cleanup Prompt
+        if files_to_delete:
+            def ask_cleanup():
+                if messagebox.askyesno("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?"):
+                    for f in files_to_delete:
+                        try: os.remove(f)
+                        except: pass
+                    update_global_status("Conversion complete. Old files deleted.", "#28a745", "")
+            app.after(0, ask_cleanup)
+    else:
+        app.after(0, lambda: update_global_status("Conversion stopped by user.", "orange", ""))
+
+# ==================== Custom Speed Prompt ====================
+def ask_conversion_speed():
+    """Custom Dialog for Conversion Speed"""
+    dialog = ctk.CTkToplevel(app)
+    dialog.title("Conversion Speed")
+    dialog.geometry("350x150")
+    dialog.transient(app) # Keeps it on top of main window
+    dialog.grab_set() # Disables main window until choice is made
+    
+    result = ["cancel"] # Stored in list to be modified by inner function
+    
+    def set_res(val):
+        result[0] = val
+        dialog.destroy()
+        
+    lbl = ctk.CTkLabel(dialog, text="Choose conversion speed:", font=("Arial", 14, "bold"))
+    lbl.pack(pady=20)
+    
+    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    btn_frame.pack()
+    
+    ctk.CTkButton(btn_frame, text="Fast", fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res("fast")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text="Slow", fg_color="#ff4444", hover_color="#cc0000", width=90, command=lambda: set_res("slow")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text="Cancel", fg_color="#555", hover_color="#333", width=90, command=lambda: set_res("cancel")).pack(side="left", padx=10)
+    
+    app.wait_window(dialog)
+    return result[0]
+
+# ==================== Bottom Section (Download, Convert & Cancel) ====================
+bottom_frame = ctk.CTkFrame(app, fg_color="transparent")
+bottom_frame.pack(pady=10, side="bottom")
+
+def on_download_click():
+    threading.Thread(target=download_worker, daemon=True).start()
+
+def on_convert_click():
+    global is_converting
+    save_path = path_entry.get()
+    if not save_path or not os.path.isdir(save_path):
+        update_global_status("Error: Please select a valid Save Path first!", "red", "")
+        return
+
+    selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    if not selected_rows:
+        update_global_status("Error: No videos selected to convert!", "red", "")
+        return
+        
+    quality = quality_combo.get()
+    if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
+        update_global_status("Error: Please select a quality first!", "red", "")
+        return
+
+    speed_choice = ask_conversion_speed()
+    if speed_choice == "cancel":
+        update_global_status("Conversion canceled by user.", "orange", "")
+        return
+    
+    needs_download = False
+    for r in selected_rows:
+        if not find_downloaded_file(save_path, r['title']):
+            needs_download = True
+            break
+            
+    do_download_first = False
+    if needs_download:
+        dl_choice = messagebox.askyesno(
+            "Download Required", 
+            "Some selected videos are not downloaded yet.\nDo you want to download them first?"
+        )
+        if not dl_choice:
+            update_global_status("Conversion canceled by user.", "orange", "")
+            return
+        do_download_first = True
+        
+    is_converting = True
+    threading.Thread(target=convert_worker, args=(speed_choice, selected_rows, save_path, quality, do_download_first), daemon=True).start()
+
+def on_stop_convert_click():
+    """Kills the active FFmpeg process"""
+    global is_converting, current_ffmpeg_process
+    is_converting = False
+    if current_ffmpeg_process:
+        try: current_ffmpeg_process.terminate()
+        except: pass
+    update_global_status("Stopping conversion... please wait.", "orange", "")
+
+def on_cancel_download_click():
+    global is_downloading
+    if is_downloading:
+        is_downloading = False
+        update_global_status("Canceling download... please wait.", "orange", "")
+
+ctk.CTkButton(bottom_frame, text="Download Selected", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#840284", hover_color="#6b016b", command=on_download_click).pack(side="left", padx=10)
+
+convert_action_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+convert_action_frame.pack(side="left", padx=10)
+
+convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#0086cc", hover_color="#006bb3", command=on_convert_click)
+convert_btn.pack(side="left")
+
+stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#ff4444", hover_color="#cc0000", command=on_stop_convert_click)
+
+ctk.CTkButton(bottom_frame, text="Cancel Download", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#FF6600", hover_color="#cc5200", command=on_cancel_download_click).pack(side="left", padx=10)
 
 app.mainloop()
