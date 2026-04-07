@@ -8,6 +8,7 @@ import subprocess
 from tkinter import filedialog
 import imageio_ffmpeg
 import concurrent.futures
+import winsound  # لمكتبة الأصوات
 
 # --- Window Setup ---
 ctk.set_appearance_mode("Dark")
@@ -92,11 +93,13 @@ dashboard_frame = ctk.CTkFrame(toolbar_frame, fg_color="transparent")
 dashboard_frame.pack(side="left", padx=20)
 
 ctk.CTkLabel(dashboard_frame, text="Total Time:", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 5))
-total_time_label = ctk.CTkLabel(dashboard_frame, text="0s", font=("Arial", 12, "bold"), text_color="#FF6600", width=80, anchor="w")
+# Text Color Changed to Gray (#aaaaaa)
+total_time_label = ctk.CTkLabel(dashboard_frame, text="0s", font=("Arial", 12, "bold"), text_color="#aaaaaa", width=80, anchor="w")
 total_time_label.pack(side="left", padx=(0, 15))
 
 ctk.CTkLabel(dashboard_frame, text="Total Size:", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 5))
-total_size_label = ctk.CTkLabel(dashboard_frame, text="0.0 MB", font=("Arial", 12, "bold"), text_color="#FF6600", width=80, anchor="w")
+# Text Color Changed to Gray (#aaaaaa)
+total_size_label = ctk.CTkLabel(dashboard_frame, text="0.0 MB", font=("Arial", 12, "bold"), text_color="#aaaaaa", width=80, anchor="w")
 total_size_label.pack(side="left")
 
 quality_layout = ctk.CTkFrame(toolbar_frame, fg_color="transparent")
@@ -165,7 +168,56 @@ def safe_progress_update(widget, value):
     if widget and widget.winfo_exists():
         widget.set(value)
 
-# ==================== Core Functions ====================
+# ==================== Core Functions & Custom Popups ====================
+def center_toplevel(top, width, height):
+    app.update_idletasks()
+    x = app.winfo_x() + (app.winfo_width() // 2) - (width // 2)
+    y = app.winfo_y() + (app.winfo_height() // 2) - (height // 2)
+    top.geometry(f"{width}x{height}+{x}+{y}")
+
+def custom_msg_box(title, message, msg_type="error"):
+    """Displays a styled popup with Windows system sounds, Emojis, and an OK button"""
+    dialog = ctk.CTkToplevel(app)
+    dialog.title(title)
+    center_toplevel(dialog, 450, 200)
+    dialog.transient(app)
+    dialog.grab_set()
+    
+    color = "#ff4444" 
+    icon = "🛑"
+    if msg_type == "error":
+        winsound.MessageBeep(winsound.MB_ICONHAND)
+    elif msg_type == "warning":
+        color = "#FFCC00" 
+        icon = "⚠️"
+        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+    elif msg_type == "success":
+        color = "#28a745"
+        icon = "✅"
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    elif msg_type == "info":
+        color = "#0086cc"
+        icon = "ℹ️"
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        
+    lbl_title = ctk.CTkLabel(dialog, text=f"{icon} {title}", font=("Arial", 16, "bold"), text_color=color)
+    lbl_title.pack(pady=(20, 5))
+    
+    lbl_msg = ctk.CTkLabel(dialog, text=message, font=("Arial", 14), wraplength=400)
+    lbl_msg.pack(pady=(0, 20), padx=20)
+    
+    ctk.CTkButton(dialog, text="OK", fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
+    app.wait_window(dialog)
+
+def format_size(bytes_size):
+    """Smart formatter to convert MB to GB if it exceeds 1000 MB"""
+    if bytes_size <= 0: return "0.0 MB"
+    mb = bytes_size / (1024 * 1024)
+    if mb >= 1000:
+        gb = mb / 1024
+        return f"{gb:.2f} GB"
+    return f"{mb:.1f} MB"
+
 def update_global_status(msg, color="white", warning_msg=""):
     global_status_label.configure(text=f"Status: {msg}", text_color=color)
     global_warning_label.configure(text=warning_msg)
@@ -200,19 +252,9 @@ def update_dynamic_totals():
     if total_seconds == 0: time_text = "0s"
     total_time_label.configure(text=time_text)
 
-    if total_bytes > 0:
-        mb_size = total_bytes / (1024 * 1024)
-        if mb_size >= 1024:
-            gb_size = mb_size / 1024
-            size_text = f"{gb_size:.2f} GB"
-        else:
-            size_text = f"{mb_size:.1f} MB"
-    else:
-        size_text = "0.0 MB"
-
+    size_text = format_size(total_bytes)
     if not all_fetched and total_bytes > 0:
         size_text += "+"
-    
     total_size_label.configure(text=size_text)
 
 def toggle_all(state):
@@ -228,7 +270,7 @@ def remove_selected():
             row_data["frame"].destroy()
             video_rows.remove(row_data)
             
-    total_time_label.configure(text="0s", text_color="#aaaaaa")
+    total_time_label.configure(text="0s")
     update_dynamic_totals()
     try: app.after(10, lambda: list_frame._parent_canvas.yview_moveto(0.0))
     except: pass
@@ -337,8 +379,8 @@ def fetch_size_for_single_video(row_data, quality):
             
             if file_size and file_size > 0:
                 row_data['bytes_size'] = file_size
-                mb_size = file_size / (1024 * 1024)
-                app.after(0, lambda: safe_ui_update(row_data['size_label'], text=f"{mb_size:.1f} MB", text_color="white"))
+                size_str = format_size(file_size)
+                app.after(0, lambda: safe_ui_update(row_data['size_label'], text=size_str, text_color="white"))
                 with error_lock:
                     consecutive_errors = 0
             else:
@@ -360,12 +402,12 @@ def fetch_all_sizes_worker():
     
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        app.after(0, lambda: update_global_status("Error: Please select a quality first!", "red", ""))
+        app.after(0, lambda: custom_msg_box("Missing Selection", "Please select a Quality first!", "warning"))
         return
         
     selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
-        app.after(0, lambda: update_global_status("Error: No videos selected!", "red", ""))
+        app.after(0, lambda: custom_msg_box("No Videos", "Please select at least one video to fetch sizes.", "warning"))
         return
 
     consecutive_errors = 0
@@ -385,6 +427,7 @@ def fetch_all_sizes_worker():
     
     if consecutive_errors >= 10:
         app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", "#ff4444", ""))
+        app.after(0, lambda: custom_msg_box("Connection Blocked", "YouTube temporarily blocked the connection (Too many requests).", "error"))
     elif is_fetching_sizes:
         blocked_count = sum(1 for r in selected_rows if r['bytes_size'] == 0)
         if blocked_count > 0:
@@ -417,7 +460,7 @@ def render_chunk(entries_data, current_idx, qualities, chunk_size=15):
 def fetch_video_data():
     url = url_entry.get()
     if not url:
-        app.after(0, lambda: update_global_status("Error: Please enter a valid YouTube URL!", "red", ""))
+        app.after(0, lambda: custom_msg_box("Missing URL", "Please enter a valid YouTube URL to search!", "error"))
         return
 
     app.after(0, clear_list)
@@ -466,7 +509,8 @@ def fetch_video_data():
             app.after(0, lambda: render_chunk(entries_data, 0, qualities))
 
     except Exception as e:
-        app.after(0, lambda e=e: update_global_status(f"Error: {str(e)[:80]}...", "red", ""))
+        app.after(0, lambda: update_global_status("Search Failed.", "red", ""))
+        app.after(0, lambda e=e: custom_msg_box("Connection Error", f"Failed to connect or fetch data from YouTube.\n\nCheck URL or connection.", "error"))
 
 def on_search_click():
     threading.Thread(target=fetch_video_data, daemon=True).start()
@@ -477,7 +521,7 @@ ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color="#840284", hover
 def find_downloaded_file(save_path, title):
     sanitized = sanitize_filename(title)
     
-    for ext in ['.mkv', '.webm', '.mp4', '.m4a']:
+    for ext in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']:
         p = os.path.join(save_path, f"{sanitized}{ext}")
         if os.path.exists(p): return p
         
@@ -486,7 +530,7 @@ def find_downloaded_file(save_path, title):
         search_pattern = os.path.join(save_path, f"*{safe_prefix}*")
         files = glob.glob(search_pattern)
         for f in files:
-            if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a']) and not f.endswith('.part'):
+            if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']) and not f.endswith('.part'):
                 return f
     except: pass
     return None
@@ -519,11 +563,7 @@ def _download_process(rows_to_download, quality, save_path):
         def progress_hook(d, r=row_data):
             global is_downloading
             if not is_downloading:
-                r['dl_state'] = 'canceled'
-                app.after(0, lambda: safe_ui_update(r['status_label'], text="Canceled", text_color="#ff4444"))
-                app.after(0, lambda: safe_progress_update(r['progress'], 0))
-                app.after(0, lambda: safe_ui_update(r['percent_label'], text="0%", text_color="#ff4444"))
-                raise ValueError("DOWNLOAD_CANCELLED")
+                raise ValueError("DOWNLOAD_CANCELLED") # Abort instantly
                 
             if not r['frame'].winfo_exists(): return 
             
@@ -536,8 +576,8 @@ def _download_process(rows_to_download, quality, save_path):
                     app.after(0, lambda: safe_ui_update(r['percent_label'], text=f"{int(percent*100)}%"))
                     
                     if r['bytes_size'] == -1: 
-                        mb_size = total / (1024 * 1024)
-                        app.after(0, lambda: safe_ui_update(r['size_label'], text=f"{mb_size:.1f} MB"))
+                        size_str = format_size(total)
+                        app.after(0, lambda: safe_ui_update(r['size_label'], text=size_str))
                     
                     if r.get('dl_state') not in ['canceled', 'already_exists']:
                         r['dl_state'] = 'downloading'
@@ -577,10 +617,7 @@ def _download_process(rows_to_download, quality, save_path):
                 
         except Exception:
             if not is_downloading:
-                row_data['dl_state'] = 'canceled'
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color="#ff4444"))
-                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
-                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color="#ff4444"))
+                pass # Instant update handled in the Cancel button
             else:
                 row_data['dl_state'] = 'failed'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color="#ff4444"))
@@ -590,17 +627,17 @@ def download_worker():
     save_path = path_entry.get()
     
     if not save_path or not os.path.isdir(save_path):
-        app.after(0, lambda: update_global_status("Error: Please select a valid Save Path first!", "red", ""))
+        app.after(0, lambda: custom_msg_box("Invalid Path", "Please select a valid Save Path folder first!", "error"))
         return
 
     selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
-        app.after(0, lambda: update_global_status("Error: No videos selected to download!", "red", ""))
+        app.after(0, lambda: custom_msg_box("No Selection", "Please select at least one video to download!", "warning"))
         return
 
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        app.after(0, lambda: update_global_status("Error: Please select a quality first!", "red", ""))
+        app.after(0, lambda: custom_msg_box("Quality Not Selected", "Please select a Download Quality first!", "warning"))
         return
 
     is_downloading = True
@@ -610,18 +647,13 @@ def download_worker():
 
     if is_downloading:
         app.after(0, lambda: update_global_status("Downloads finished.", "#28a745", ""))
+        winsound.MessageBeep(winsound.MB_ICONASTERISK) # Success sound
     else:
         app.after(0, lambda: update_global_status("Downloads canceled by user.", "orange", ""))
         
     is_downloading = False
 
-# ==================== Custom Centered Dialogs ====================
-def center_toplevel(top, width, height):
-    app.update_idletasks()
-    x = app.winfo_x() + (app.winfo_width() // 2) - (width // 2)
-    y = app.winfo_y() + (app.winfo_height() // 2) - (height // 2)
-    top.geometry(f"{width}x{height}+{x}+{y}")
-
+# ==================== Custom Centered Dialogs (Yes/No/Speed) ====================
 def ask_conversion_speed():
     dialog = ctk.CTkToplevel(app)
     dialog.title("Conversion Speed")
@@ -629,12 +661,13 @@ def ask_conversion_speed():
     dialog.transient(app) 
     dialog.grab_set() 
     
+    winsound.MessageBeep(winsound.MB_ICONASTERISK)
     result = ["cancel"] 
     def set_res(val):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text="Choose conversion speed:", font=("Arial", 14, "bold"))
+    lbl = ctk.CTkLabel(dialog, text="⚡ Choose conversion speed:", font=("Arial", 14, "bold"))
     lbl.pack(pady=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
@@ -647,19 +680,20 @@ def ask_conversion_speed():
     app.wait_window(dialog)
     return result[0]
 
-def custom_ask_yes_no(title, message):
+def custom_ask_yes_no(title, message, icon="⚠️"):
     dialog = ctk.CTkToplevel(app)
     dialog.title(title)
-    center_toplevel(dialog, 450, 150)
+    center_toplevel(dialog, 450, 180)
     dialog.transient(app)
     dialog.grab_set()
     
+    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     result = [False]
     def set_res(val):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text=message, font=("Arial", 14, "bold"))
+    lbl = ctk.CTkLabel(dialog, text=f"{icon} {message}", font=("Arial", 14, "bold"), wraplength=400)
     lbl.pack(pady=20, padx=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
@@ -701,8 +735,15 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Not Found", text_color="#ff4444"))
             continue
             
-        if input_file.endswith('.mp4'):
+        if input_file.endswith(('.mp4')):
             app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Already MP4", text_color="#28a745"))
+            app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
+            app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+            continue
+            
+        # Ignore Audio files gracefully
+        if input_file.endswith(('.mp3', '.m4a', '.wav')):
+            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Audio File", text_color="#28a745"))
             app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
             app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
             continue
@@ -758,9 +799,10 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     
     if is_converting:
         app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
         if files_to_delete:
             def ask_cleanup():
-                if custom_ask_yes_no("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?"):
+                if custom_ask_yes_no("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?", icon="🗑️"):
                     for f in files_to_delete:
                         try: os.remove(f)
                         except: pass
@@ -773,7 +815,6 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
 bottom_frame = ctk.CTkFrame(app, fg_color="transparent")
 bottom_frame.pack(pady=10, side="bottom") 
 
-# Container to keep everything centered
 center_actions_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
 center_actions_frame.pack()
 
@@ -785,22 +826,29 @@ def on_cancel_download_click():
     if is_downloading:
         is_downloading = False
         update_global_status("Canceling download... please wait.", "orange", "")
+        # Force Instant UI Update for all downloading files bypassing yt-dlp block delay
+        for r in video_rows:
+            if r.get('dl_state') in ['preparing', 'downloading']:
+                r['dl_state'] = 'canceled'
+                safe_ui_update(r['status_label'], text="Canceled", text_color="#ff4444")
+                safe_progress_update(r['progress'], 0)
+                safe_ui_update(r['percent_label'], text="0%", text_color="#ff4444")
 
 def on_convert_click():
     global is_converting
     save_path = path_entry.get()
     if not save_path or not os.path.isdir(save_path):
-        update_global_status("Error: Please select a valid Save Path first!", "red", "")
+        custom_msg_box("Invalid Path", "Please select a valid Save Path folder first!", "error")
         return
 
     selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
-        update_global_status("Error: No videos selected to convert!", "red", "")
+        custom_msg_box("No Selection", "Please select at least one video to convert!", "warning")
         return
         
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        update_global_status("Error: Please select a quality first!", "red", "")
+        custom_msg_box("Quality Not Selected", "Please select a Quality first!", "warning")
         return
 
     speed_choice = ask_conversion_speed()
@@ -816,7 +864,7 @@ def on_convert_click():
             
     do_download_first = False
     if needs_download:
-        dl_choice = custom_ask_yes_no("Download Required", "Some selected videos are not downloaded yet.\nDo you want to download them first?")
+        dl_choice = custom_ask_yes_no("Download Required", "Some selected videos are not downloaded yet.\nDo you want to download them first?", icon="⚠️")
         if not dl_choice:
             update_global_status("Conversion canceled by user.", "orange", "")
             return
@@ -833,13 +881,9 @@ def on_stop_convert_click():
         except: pass
     update_global_status("Stopping conversion... please wait.", "orange", "")
 
-# 1. Download Selected
 ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#840284", hover_color="#6b016b", command=on_download_click).pack(side="left", padx=10)
-
-# 2. Cancel Download
 ctk.CTkButton(center_actions_frame, text="Cancel Download", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#FF6600", hover_color="#cc5200", command=on_cancel_download_click).pack(side="left", padx=10)
 
-# 3. Convert / Stop Convert Frame
 convert_action_frame = ctk.CTkFrame(center_actions_frame, fg_color="transparent")
 convert_action_frame.pack(side="left")
 
@@ -847,6 +891,5 @@ convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=1
 convert_btn.pack(side="left", padx=10)
 
 stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=("Arial", 14, "bold"), fg_color="#ff4444", hover_color="#cc0000", command=on_stop_convert_click)
-# Note: stop_convert_btn is purposely NOT packed here to remain hidden initially
 
 app.mainloop()
