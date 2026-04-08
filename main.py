@@ -8,29 +8,21 @@ import subprocess
 from tkinter import filedialog
 import imageio_ffmpeg
 import concurrent.futures
-import winsound  
+
+# استدعاء ملفات الإعدادات والرسائل
+import config
+import messages
 
 # --- Window Setup ---
 ctk.set_appearance_mode("Dark")
 app = ctk.CTk()
 app.geometry("1000x700")
-app.title("ElmarakbyTube Downloader")
+app.title(config.APP_TITLE)
 
-# Force the app icon for main window and set as default for all popups
-ICON_FILE = "icon.ico"
 try:
-    app.iconbitmap(default=ICON_FILE)
+    app.iconbitmap(default=config.ICON_FILE)
 except:
     pass
-
-# ==================== Brand Colors (From Logo) ====================
-# Darker shades for better white text contrast
-COLOR_CYAN = "#007BA7"        # Darker Cyan
-COLOR_CYAN_HOVER = "#005F83"
-COLOR_MAGENTA = "#B20059"     # Darker Magenta
-COLOR_MAGENTA_HOVER = "#8C0046"
-COLOR_RED = "#D32F2F"         # Darker Red for warnings
-COLOR_RED_HOVER = "#9A0007"
 
 # Global variables
 video_rows = []
@@ -41,12 +33,10 @@ is_downloading = False
 is_converting = False
 current_ffmpeg_process = None
 
-# Declare variables to prevent undefined warnings
 convert_btn = None
 stop_convert_btn = None
 
 # --- Custom Logger ---
-# Hides yt-dlp terminal output
 class SilentLogger:
     def debug(self, msg): pass
     def warning(self, msg): pass
@@ -58,7 +48,7 @@ top_frame.pack(fill="x", padx=20, pady=20)
 
 save_path_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
 save_path_frame.pack(side="left", fill="x", expand=True, padx=(0, 10))
-ctk.CTkLabel(save_path_frame, text="Save Path:", font=("Arial", 12, "bold")).pack(anchor="w")
+ctk.CTkLabel(save_path_frame, text="Save Path:", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(anchor="w")
 
 path_input_layout = ctk.CTkFrame(save_path_frame, fg_color="transparent")
 path_input_layout.pack(fill="x")
@@ -71,11 +61,11 @@ def browse_save_path():
         path_entry.delete(0, 'end')
         path_entry.insert(0, folder_path)
 
-ctk.CTkButton(path_input_layout, text="Browse", width=80, fg_color=COLOR_MAGENTA, hover_color=COLOR_MAGENTA_HOVER, command=browse_save_path).pack(side="left")
+ctk.CTkButton(path_input_layout, text="Browse", width=80, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=browse_save_path).pack(side="left")
 
 url_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
 url_frame.pack(side="left", fill="x", expand=True)
-ctk.CTkLabel(url_frame, text="Video or Playlist URL:", font=("Arial", 12, "bold")).pack(anchor="w")
+ctk.CTkLabel(url_frame, text="Video or Playlist URL:", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(anchor="w")
 
 url_input_layout = ctk.CTkFrame(url_frame, fg_color="transparent")
 url_input_layout.pack(fill="x")
@@ -108,17 +98,17 @@ toolbar_frame.pack(fill="x", padx=20, pady=(0, 10))
 
 ctk.CTkButton(toolbar_frame, text="Select All", width=90, fg_color="#333", hover_color="#444", command=lambda: toggle_all(True)).pack(side="left", padx=(0, 5))
 ctk.CTkButton(toolbar_frame, text="Deselect All", width=90, fg_color="#333", hover_color="#444", command=lambda: toggle_all(False)).pack(side="left", padx=(0, 5))
-ctk.CTkButton(toolbar_frame, text="Remove Selected", width=110, fg_color=COLOR_RED, hover_color=COLOR_RED_HOVER, command=lambda: remove_selected()).pack(side="left")
+ctk.CTkButton(toolbar_frame, text="Remove Selected", width=110, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=lambda: remove_selected()).pack(side="left")
 
 dashboard_frame = ctk.CTkFrame(toolbar_frame, fg_color="transparent")
 dashboard_frame.pack(side="left", padx=20)
 
-ctk.CTkLabel(dashboard_frame, text="Total Time:", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 5))
-total_time_label = ctk.CTkLabel(dashboard_frame, text="0s", font=("Arial", 12, "bold"), text_color="#aaaaaa", width=80, anchor="w")
+ctk.CTkLabel(dashboard_frame, text="Total Time:", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left", padx=(0, 5))
+total_time_label = ctk.CTkLabel(dashboard_frame, text="0s", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold"), text_color="#aaaaaa", width=80, anchor="w")
 total_time_label.pack(side="left", padx=(0, 15))
 
-ctk.CTkLabel(dashboard_frame, text="Total Size:", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 5))
-total_size_label = ctk.CTkLabel(dashboard_frame, text="0.0 MB", font=("Arial", 12, "bold"), text_color="#aaaaaa", width=80, anchor="w")
+ctk.CTkLabel(dashboard_frame, text="Total Size:", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left", padx=(0, 5))
+total_size_label = ctk.CTkLabel(dashboard_frame, text="0.0 MB", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold"), text_color="#aaaaaa", width=80, anchor="w")
 total_size_label.pack(side="left")
 
 quality_layout = ctk.CTkFrame(toolbar_frame, fg_color="transparent")
@@ -141,9 +131,9 @@ def on_stop_fetch_click():
 fetch_action_frame = ctk.CTkFrame(quality_layout, fg_color="transparent")
 fetch_action_frame.pack(side="left", padx=(0, 10))
 
-ctk.CTkButton(fetch_action_frame, text="Fetch Sizes", width=90, fg_color=COLOR_CYAN, hover_color=COLOR_CYAN_HOVER, command=on_fetch_sizes_click).pack(side="left")
+ctk.CTkButton(fetch_action_frame, text="Fetch Sizes", width=90, fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_fetch_sizes_click).pack(side="left")
 
-stop_fetch_btn = ctk.CTkButton(fetch_action_frame, text="Stop Fetch", width=90, fg_color=COLOR_RED, hover_color=COLOR_RED_HOVER, command=on_stop_fetch_click)
+stop_fetch_btn = ctk.CTkButton(fetch_action_frame, text="Stop Fetch", width=90, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_fetch_click)
 
 ctk.CTkLabel(quality_layout, text="Quality:").pack(side="left", padx=(0, 5))
 quality_combo = ctk.CTkComboBox(quality_layout, values=["Waiting for link..."], width=130, command=on_quality_change)
@@ -155,13 +145,13 @@ header_frame = ctk.CTkFrame(app, fg_color="#1e1e1e", height=40, corner_radius=5)
 header_frame.pack(fill="x", padx=20, pady=(0, 5))
 
 ctk.CTkLabel(header_frame, text="", width=30).pack(side="left", padx=5)
-ctk.CTkLabel(header_frame, text="#", width=30, font=("Arial", 12, "bold")).pack(side="left", padx=(5, 0))
-ctk.CTkLabel(header_frame, text="Video Title", width=250, anchor="w", font=("Arial", 12, "bold")).pack(side="left")
-ctk.CTkLabel(header_frame, text="Duration", width=70, font=("Arial", 12, "bold")).pack(side="left")
-ctk.CTkLabel(header_frame, text="Size", width=80, font=("Arial", 12, "bold")).pack(side="left")
-ctk.CTkLabel(header_frame, text="Status", width=100, font=("Arial", 12, "bold")).pack(side="left")
-ctk.CTkLabel(header_frame, text="Progress", width=120, font=("Arial", 12, "bold")).pack(side="left", padx=(10, 5))
-ctk.CTkLabel(header_frame, text="%", width=40, font=("Arial", 12, "bold")).pack(side="left")
+ctk.CTkLabel(header_frame, text="#", width=30, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left", padx=(5, 0))
+ctk.CTkLabel(header_frame, text="Video Title", width=250, anchor="w", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left")
+ctk.CTkLabel(header_frame, text="Duration", width=70, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left")
+ctk.CTkLabel(header_frame, text="Size", width=80, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left")
+ctk.CTkLabel(header_frame, text="Status", width=100, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left")
+ctk.CTkLabel(header_frame, text="Progress", width=120, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left", padx=(10, 5))
+ctk.CTkLabel(header_frame, text="%", width=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left")
 
 # ==================== List Area ====================
 list_frame = ctk.CTkScrollableFrame(app, fg_color="#2b2b2b")
@@ -171,10 +161,10 @@ list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 status_bar = ctk.CTkFrame(app, height=30, fg_color="#1e1e1e", corner_radius=0)
 status_bar.pack(fill="x", side="bottom")
 
-global_status_label = ctk.CTkLabel(status_bar, text="Status: Ready", font=("Arial", 12))
+global_status_label = ctk.CTkLabel(status_bar, text="Status: Ready", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN))
 global_status_label.pack(side="left", padx=(20, 5))
 
-global_warning_label = ctk.CTkLabel(status_bar, text="", font=("Arial", 12, "bold"), text_color=COLOR_RED)
+global_warning_label = ctk.CTkLabel(status_bar, text="", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold"), text_color=config.COLOR_RED)
 global_warning_label.pack(side="left")
 
 # ==================== UI Safety Helpers ====================
@@ -196,42 +186,38 @@ def center_toplevel(top, width, height):
 def custom_msg_box(title, message, msg_type="error"):
     dialog = ctk.CTkToplevel(app)
     dialog.title(title)
-    center_toplevel(dialog, 450, 200)
+    center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
     dialog.transient(app)
     dialog.grab_set()
     
-    # Force app icon into the popup after a small delay to overwrite default
     def apply_icon():
         try:
-            dialog.iconbitmap(ICON_FILE)
+            dialog.iconbitmap(config.ICON_FILE)
         except:
             pass
     dialog.after(200, apply_icon)
     
-    color = COLOR_RED 
+    config.play_sound(msg_type)
+    
+    color = config.COLOR_RED 
     icon = "🛑"
-    if msg_type == "error":
-        winsound.MessageBeep(winsound.MB_ICONHAND)
-    elif msg_type == "warning":
+    if msg_type == "warning":
         color = "#FFCC00" 
         icon = "⚠️"
-        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     elif msg_type == "success":
         color = "#28a745"
         icon = "✅"
-        winsound.MessageBeep(winsound.MB_ICONASTERISK)
     elif msg_type == "info":
-        color = COLOR_CYAN
+        color = config.COLOR_CYAN
         icon = "ℹ️"
-        winsound.MessageBeep(winsound.MB_ICONASTERISK)
         
-    lbl_title = ctk.CTkLabel(dialog, text=f"{icon} {title}", font=("Arial", 16, "bold"), text_color=color)
+    lbl_title = ctk.CTkLabel(dialog, text=f"{icon} {title}", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color)
     lbl_title.pack(pady=(20, 5))
     
-    lbl_msg = ctk.CTkLabel(dialog, text=message, font=("Arial", 14), wraplength=400)
+    lbl_msg = ctk.CTkLabel(dialog, text=message, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400)
     lbl_msg.pack(pady=(0, 20), padx=20)
     
-    ctk.CTkButton(dialog, text="OK", fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
+    ctk.CTkButton(dialog, text=messages.BTN_OK, fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
     app.wait_window(dialog)
 
 def format_size(bytes_size):
@@ -323,7 +309,7 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
 
     ctk.CTkLabel(row, text=str(index), width=30).pack(side="left", padx=(5, 0))
     
-    title_entry = ctk.CTkEntry(row, width=250, fg_color="transparent", border_width=0, text_color="white", font=("Arial", 12))
+    title_entry = ctk.CTkEntry(row, width=250, fg_color="transparent", border_width=0, text_color="white", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN))
     title_entry.insert(0, title)
     title_entry.configure(state="readonly")
     title_entry.pack(side="left")
@@ -336,11 +322,11 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
     status_lbl = ctk.CTkLabel(row, text=status, text_color=status_color, width=100)
     status_lbl.pack(side="left")
     
-    prog_bar = ctk.CTkProgressBar(row, width=120, progress_color=COLOR_MAGENTA)
+    prog_bar = ctk.CTkProgressBar(row, width=120, progress_color=config.COLOR_MAGENTA)
     prog_bar.set(0)
     prog_bar.pack(side="left", padx=(10, 5))
     
-    percent_lbl = ctk.CTkLabel(row, text="0%", width=40, font=("Arial", 12))
+    percent_lbl = ctk.CTkLabel(row, text="0%", width=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN))
     percent_lbl.pack(side="left")
 
     video_rows.append({
@@ -369,7 +355,7 @@ def fetch_size_for_single_video(row_data, quality):
     if not row_data['frame'].winfo_exists(): return
     if row_data['bytes_size'] != -1: return 
 
-    app.after(0, lambda: safe_ui_update(row_data['size_label'], text="...", text_color=COLOR_CYAN))
+    app.after(0, lambda: safe_ui_update(row_data['size_label'], text="...", text_color=config.COLOR_CYAN))
 
     ydl_opts = {
         'quiet': True, 
@@ -390,7 +376,7 @@ def fetch_size_for_single_video(row_data, quality):
                 
             if not info:
                 row_data['bytes_size'] = 0
-                app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Blocked", text_color=COLOR_RED))
+                app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Blocked", text_color=config.COLOR_RED))
                 with error_lock:
                     consecutive_errors += 1
                     if consecutive_errors >= 10:
@@ -413,7 +399,7 @@ def fetch_size_for_single_video(row_data, quality):
                 
     except Exception:
         row_data['bytes_size'] = 0
-        app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Error", text_color=COLOR_RED))
+        app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Error", text_color=config.COLOR_RED))
         with error_lock:
             consecutive_errors += 1
             if consecutive_errors >= 10:
@@ -426,17 +412,17 @@ def fetch_all_sizes_worker():
     
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        app.after(0, lambda: custom_msg_box("Missing Selection", "Please select a Quality first!", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
         return
         
     selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
-        app.after(0, lambda: custom_msg_box("No Videos", "Please select at least one video to fetch sizes.", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_FETCH, "warning"))
         return
 
     consecutive_errors = 0
     is_fetching_sizes = True
-    app.after(0, lambda: update_global_status(f"Fetching sizes for {quality}...", COLOR_CYAN, ""))
+    app.after(0, lambda: update_global_status(f"Fetching sizes for {quality}...", config.COLOR_CYAN, ""))
     
     global fetch_btn, stop_fetch_btn
     app.after(0, lambda: fetch_btn.pack_forget() if 'fetch_btn' in globals() else None)
@@ -452,8 +438,8 @@ def fetch_all_sizes_worker():
     app.after(0, lambda: fetch_btn.pack(side="left") if 'fetch_btn' in globals() else None)
     
     if consecutive_errors >= 10:
-        app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", COLOR_RED, ""))
-        app.after(0, lambda: custom_msg_box("Connection Blocked", "YouTube temporarily blocked the connection (Too many requests).", "error"))
+        app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error"))
     elif is_fetching_sizes:
         blocked_count = sum(1 for r in selected_rows if r['bytes_size'] == 0)
         if blocked_count > 0:
@@ -472,7 +458,7 @@ def render_chunk(entries_data, current_idx, qualities, chunk_size=15):
         data = entries_data[i]
         add_video_row(data['idx'], data['title'], data['dur'], data['url'])
         
-    app.after(0, lambda: update_global_status(f"Rendering videos... ({end_idx}/{len(entries_data)})", COLOR_CYAN, ""))
+    app.after(0, lambda: update_global_status(f"Rendering videos... ({end_idx}/{len(entries_data)})", config.COLOR_CYAN, ""))
 
     if end_idx < len(entries_data):
         app.after(10, lambda: render_chunk(entries_data, end_idx, qualities, chunk_size))
@@ -485,11 +471,11 @@ def render_chunk(entries_data, current_idx, qualities, chunk_size=15):
 def fetch_video_data():
     url = url_entry.get()
     if not url:
-        app.after(0, lambda: custom_msg_box("Missing URL", "Please enter a valid YouTube URL to search!", "error"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_URL_MISSING, "error"))
         return
 
     app.after(0, clear_list)
-    app.after(0, lambda: update_global_status("Connecting to YouTube... Please wait.", COLOR_CYAN, ""))
+    app.after(0, lambda: update_global_status("Connecting to YouTube... Please wait.", config.COLOR_CYAN, ""))
     app.after(0, lambda: quality_combo.set("Loading..."))
 
     is_single_video = ("watch?v=" in url) or ("youtu.be/" in url)
@@ -534,13 +520,13 @@ def fetch_video_data():
             app.after(0, lambda: render_chunk(entries_data, 0, qualities))
 
     except Exception as e:
-        app.after(0, lambda: update_global_status("Search Failed.", COLOR_RED, ""))
-        app.after(0, lambda e=e: custom_msg_box("Connection Error", f"Failed to connect or fetch data from YouTube.\n\nCheck URL or connection.", "error"))
+        app.after(0, lambda: update_global_status("Search Failed.", config.COLOR_RED, ""))
+        app.after(0, lambda e=e: custom_msg_box(messages.TITLE_ERROR, messages.MSG_CONN_ERROR, "error"))
 
 def on_search_click():
     threading.Thread(target=fetch_video_data, daemon=True).start()
 
-ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color=COLOR_MAGENTA, hover_color=COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
+ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
 
 def find_downloaded_file(save_path, title):
     sanitized = sanitize_filename(title)
@@ -569,7 +555,7 @@ def _download_process(rows_to_download, quality, save_path):
         if not row_data['frame'].winfo_exists(): continue 
         
         row_data['dl_state'] = 'preparing'
-        app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color=COLOR_MAGENTA))
+        app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color=config.COLOR_MAGENTA))
         
         class DownloadLogger:
             def debug(self, msg):
@@ -600,7 +586,7 @@ def _download_process(rows_to_download, quality, save_path):
                         app.after(0, lambda: safe_ui_update(r['size_label'], text=size_str))
                     if r.get('dl_state') not in ['canceled', 'already_exists']:
                         r['dl_state'] = 'downloading'
-                        app.after(0, lambda: safe_ui_update(r['status_label'], text="Downloading...", text_color=COLOR_MAGENTA))
+                        app.after(0, lambda: safe_ui_update(r['status_label'], text="Downloading...", text_color=config.COLOR_MAGENTA))
             
             elif d['status'] == 'finished':
                 if r.get('dl_state') != 'already_exists':
@@ -638,34 +624,34 @@ def _download_process(rows_to_download, quality, save_path):
                 pass 
             else:
                 row_data['dl_state'] = 'failed'
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=COLOR_RED))
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED))
 
 def download_worker():
     global is_downloading
     save_path = path_entry.get()
     
     if not save_path or not os.path.isdir(save_path):
-        app.after(0, lambda: custom_msg_box("Invalid Path", "Please select a valid Save Path folder first!", "error"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error"))
         return
 
     selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
-        app.after(0, lambda: custom_msg_box("No Selection", "Please select at least one video to download!", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_DL, "warning"))
         return
 
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        app.after(0, lambda: custom_msg_box("Quality Not Selected", "Please select a Download Quality first!", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
         return
 
     is_downloading = True
-    app.after(0, lambda: update_global_status(f"Starting download for {len(selected_rows)} videos...", COLOR_MAGENTA, ""))
+    app.after(0, lambda: update_global_status(f"Starting download for {len(selected_rows)} videos...", config.COLOR_MAGENTA, ""))
 
     _download_process(selected_rows, quality, save_path)
 
     if is_downloading:
         app.after(0, lambda: update_global_status("Downloads finished.", "#28a745", ""))
-        winsound.MessageBeep(winsound.MB_ICONASTERISK) 
+        config.play_sound("success")
     else:
         app.after(0, lambda: update_global_status("Downloads canceled by user.", "orange", ""))
         
@@ -673,34 +659,33 @@ def download_worker():
 
 def ask_conversion_speed():
     dialog = ctk.CTkToplevel(app)
-    dialog.title("Conversion Speed")
+    dialog.title(messages.TITLE_SPEED)
     center_toplevel(dialog, 350, 150)
     dialog.transient(app) 
     dialog.grab_set() 
     
-    # Force app icon
     def apply_icon():
         try:
-            dialog.iconbitmap(ICON_FILE)
+            dialog.iconbitmap(config.ICON_FILE)
         except:
             pass
     dialog.after(200, apply_icon)
     
-    winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    config.play_sound("info")
     result = ["cancel"] 
     def set_res(val):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text="⚡ Choose conversion speed:", font=("Arial", 14, "bold"))
+    lbl = ctk.CTkLabel(dialog, text=messages.MSG_SPEED_PROMPT, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
     lbl.pack(pady=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-    ctk.CTkButton(btn_frame, text="Fast", fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res("fast")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text="Slow", fg_color=COLOR_RED, hover_color=COLOR_RED_HOVER, width=90, command=lambda: set_res("slow")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text="Cancel", fg_color="#555", hover_color="#333", width=90, command=lambda: set_res("cancel")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=messages.BTN_FAST, fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res("fast")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=messages.BTN_SLOW, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=90, command=lambda: set_res("slow")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=messages.BTN_CANCEL, fg_color="#555", hover_color="#333", width=90, command=lambda: set_res("cancel")).pack(side="left", padx=10)
     
     app.wait_window(dialog)
     return result[0]
@@ -708,32 +693,31 @@ def ask_conversion_speed():
 def custom_ask_yes_no(title, message, icon="⚠️"):
     dialog = ctk.CTkToplevel(app)
     dialog.title(title)
-    center_toplevel(dialog, 450, 180)
+    center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
     dialog.transient(app)
     dialog.grab_set()
     
-    # Force app icon
     def apply_icon():
         try:
-            dialog.iconbitmap(ICON_FILE)
+            dialog.iconbitmap(config.ICON_FILE)
         except:
             pass
     dialog.after(200, apply_icon)
     
-    winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+    config.play_sound("warning")
     result = [False]
     def set_res(val):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text=f"{icon} {message}", font=("Arial", 14, "bold"), wraplength=400)
+    lbl = ctk.CTkLabel(dialog, text=f"{icon} {message}", font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400)
     lbl.pack(pady=20, padx=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-    ctk.CTkButton(btn_frame, text="Yes", fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res(True)).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text="No", fg_color=COLOR_RED, hover_color=COLOR_RED_HOVER, width=90, command=lambda: set_res(False)).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=messages.BTN_YES, fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res(True)).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=messages.BTN_NO, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=90, command=lambda: set_res(False)).pack(side="left", padx=10)
     
     app.wait_window(dialog)
     return result[0]
@@ -744,7 +728,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     if do_download_first:
         global is_downloading
         is_downloading = True
-        app.after(0, lambda: update_global_status("Downloading missing files...", COLOR_MAGENTA, ""))
+        app.after(0, lambda: update_global_status("Downloading missing files...", config.COLOR_MAGENTA, ""))
         _download_process(selected_rows, quality, save_path)
         is_downloading = False
         
@@ -757,7 +741,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     app.after(0, lambda: stop_convert_btn.pack(side="left", padx=10) if 'stop_convert_btn' in globals() else None)
     
     files_to_delete = []
-    app.after(0, lambda: update_global_status("Starting conversion...", COLOR_CYAN, ""))
+    app.after(0, lambda: update_global_status("Starting conversion...", config.COLOR_CYAN, ""))
     
     for row_data in selected_rows:
         if not is_converting: break 
@@ -765,7 +749,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         
         input_file = find_downloaded_file(save_path, row_data['title'])
         if not input_file:
-            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Not Found", text_color=COLOR_RED))
+            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Not Found", text_color=config.COLOR_RED))
             continue
             
         if input_file.endswith(('.mp4')):
@@ -782,13 +766,13 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             
         output_file = os.path.splitext(input_file)[0] + '.mp4'
         
-        app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converting...", text_color=COLOR_CYAN))
-        app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="---", text_color=COLOR_CYAN))
-        app.after(0, lambda r=row_data: r['progress'].configure(mode="indeterminate", progress_color=COLOR_CYAN))
+        app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converting...", text_color=config.COLOR_CYAN))
+        app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="---", text_color=config.COLOR_CYAN))
+        app.after(0, lambda r=row_data: r['progress'].configure(mode="indeterminate", progress_color=config.COLOR_CYAN))
         app.after(0, lambda r=row_data: r['progress'].start())
         
         update_status_msg = "Remuxing" if speed_choice == "fast" else "Re-encoding"
-        app.after(0, lambda: update_global_status(f"Converting ({update_status_msg})...", COLOR_CYAN, ""))
+        app.after(0, lambda: update_global_status(f"Converting ({update_status_msg})...", config.COLOR_CYAN, ""))
         
         cmd = [imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-i', input_file]
         if speed_choice == "fast":
@@ -808,7 +792,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 raise Exception("FFMPEG_ERROR")
             
             app.after(0, lambda r=row_data: r['progress'].stop())
-            app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=COLOR_MAGENTA))
+            app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
             app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
             app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
             app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converted", text_color="#28a745"))
@@ -816,13 +800,13 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             files_to_delete.append(input_file)
         except Exception:
             app.after(0, lambda r=row_data: r['progress'].stop())
-            app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=COLOR_MAGENTA))
+            app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
             if not is_converting:
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color=COLOR_RED))
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED))
                 app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
-                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color=COLOR_RED))
+                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED))
             else:
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Convert Failed", text_color=COLOR_RED))
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Convert Failed", text_color=config.COLOR_RED))
         finally:
             current_ffmpeg_process = None
             
@@ -833,7 +817,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
         if files_to_delete:
             def ask_cleanup():
-                if custom_ask_yes_no("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?", icon="🗑️"):
+                if custom_ask_yes_no(messages.TITLE_CONFIRM, messages.MSG_CLEANUP):
                     for f in files_to_delete:
                         try: os.remove(f)
                         except: pass
@@ -859,25 +843,25 @@ def on_cancel_download_click():
         for r in video_rows:
             if r.get('dl_state') in ['preparing', 'downloading']:
                 r['dl_state'] = 'canceled'
-                safe_ui_update(r['status_label'], text="Canceled", text_color=COLOR_RED)
+                safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED)
                 safe_progress_update(r['progress'], 0)
-                safe_ui_update(r['percent_label'], text="0%", text_color=COLOR_RED)
+                safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
 
 def on_convert_click():
     global is_converting
     save_path = path_entry.get()
     if not save_path or not os.path.isdir(save_path):
-        custom_msg_box("Invalid Path", "Please select a valid Save Path folder first!", "error")
+        custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error")
         return
 
     selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
-        custom_msg_box("No Selection", "Please select at least one video to convert!", "warning")
+        custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_CONV, "warning")
         return
         
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-        custom_msg_box("Quality Not Selected", "Please select a Quality first!", "warning")
+        custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning")
         return
 
     speed_choice = ask_conversion_speed()
@@ -893,7 +877,7 @@ def on_convert_click():
             
     do_download_first = False
     if needs_download:
-        dl_choice = custom_ask_yes_no("Download Required", "Some selected videos are not downloaded yet.\nDo you want to download them first?", icon="⚠️")
+        dl_choice = custom_ask_yes_no(messages.TITLE_WARNING, messages.MSG_DL_REQUIRED, icon="⚠️")
         if not dl_choice:
             update_global_status("Conversion canceled by user.", "orange", "")
             return
@@ -910,15 +894,15 @@ def on_stop_convert_click():
         except: pass
     update_global_status("Stopping conversion... please wait.", "orange", "")
 
-ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=("Arial", 14, "bold"), fg_color=COLOR_MAGENTA, hover_color=COLOR_MAGENTA_HOVER, command=on_download_click).pack(side="left", padx=10)
-ctk.CTkButton(center_actions_frame, text="Cancel Download", width=150, height=40, font=("Arial", 14, "bold"), fg_color=COLOR_RED, hover_color=COLOR_RED_HOVER, command=on_cancel_download_click).pack(side="left", padx=10)
+ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click).pack(side="left", padx=10)
+ctk.CTkButton(center_actions_frame, text="Cancel Download", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click).pack(side="left", padx=10)
 
 convert_action_frame = ctk.CTkFrame(center_actions_frame, fg_color="transparent")
 convert_action_frame.pack(side="left")
 
-convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=150, height=40, font=("Arial", 14, "bold"), fg_color=COLOR_CYAN, hover_color=COLOR_CYAN_HOVER, command=on_convert_click)
+convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click)
 convert_btn.pack(side="left", padx=10)
 
-stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=("Arial", 14, "bold"), fg_color=COLOR_RED, hover_color=COLOR_RED_HOVER, command=on_stop_convert_click)
+stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click)
 
 app.mainloop()
