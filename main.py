@@ -16,6 +16,11 @@ app = ctk.CTk()
 app.geometry("1000x700")
 app.title("ElmarakbyTube Downloader")
 
+try:
+    app.iconbitmap("icon.ico")
+except:
+    pass
+
 # Global variables
 video_rows = []
 is_fetching_sizes = False 
@@ -174,6 +179,11 @@ def center_toplevel(top, width, height):
     x = app.winfo_x() + (app.winfo_width() // 2) - (width // 2)
     y = app.winfo_y() + (app.winfo_height() // 2) - (height // 2)
     top.geometry(f"{width}x{height}+{x}+{y}")
+    # السطرين دول عشان الأيقونة تظهر في البوب-أب
+    try:
+        top.after(10, lambda: top.iconbitmap("icon.ico"))
+    except:
+        pass
 
 def custom_msg_box(title, message, msg_type="error"):
     """Displays a styled popup with Windows system sounds, Emojis, and an OK button"""
@@ -597,7 +607,7 @@ def _download_process(rows_to_download, quality, save_path):
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
-            'ignoreerrors': True,
+            # تم حذف سطر ignoreerrors من هنا عشان ميكدبش لو النت فصل
             'continuedl': True, 
             'logger': DownloadLogger(), 
             'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe() 
@@ -799,7 +809,6 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     
     if is_converting:
         app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
-        winsound.MessageBeep(winsound.MB_ICONASTERISK)
         if files_to_delete:
             def ask_cleanup():
                 if custom_ask_yes_no("Cleanup", "Conversion completed successfully!\nDo you want to delete the old original files?", icon="🗑️"):
