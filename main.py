@@ -1,3 +1,4 @@
+# Import necessary tools for the app to work
 import customtkinter as ctk
 import yt_dlp
 from yt_dlp.utils import sanitize_filename
@@ -9,22 +10,25 @@ from tkinter import filedialog
 import imageio_ffmpeg
 import concurrent.futures
 
-# استدعاء ملفات الإعدادات والرسائل
+# Import our custom settings and messages files
 import config
 import messages
 
 # --- Window Setup ---
+# Make the app dark, set its size, and give it a title
 ctk.set_appearance_mode("Dark")
 app = ctk.CTk()
 app.geometry("1000x700")
 app.title(config.APP_TITLE)
 
+# Set the app icon
 try:
     app.iconbitmap(default=config.ICON_FILE)
 except:
     pass
 
 # Global variables
+# These remember the app's current state (e.g., is it downloading? converting?)
 video_rows = []
 is_fetching_sizes = False 
 consecutive_errors = 0 
@@ -33,19 +37,24 @@ is_downloading = False
 is_converting = False
 current_ffmpeg_process = None
 
+# Variables for the buttons so we can hide/show them later
 convert_btn = None
 stop_convert_btn = None
 
 # --- Custom Logger ---
+# This hides annoying text from yt-dlp in the terminal
 class SilentLogger:
     def debug(self, msg): pass
     def warning(self, msg): pass
     def error(self, msg): pass
 
 # ==================== Top Section ====================
+# This area holds the Save Path and YouTube URL inputs
+
 top_frame = ctk.CTkFrame(app, fg_color="transparent")
 top_frame.pack(fill="x", padx=20, pady=20)
 
+# Save Path input area
 save_path_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
 save_path_frame.pack(side="left", fill="x", expand=True, padx=(0, 10))
 ctk.CTkLabel(save_path_frame, text="Save Path:", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(anchor="w")
@@ -55,6 +64,7 @@ path_input_layout.pack(fill="x")
 path_entry = ctk.CTkEntry(path_input_layout, placeholder_text="/Downloads/Playlists...")
 path_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
+# Function to open a window to choose a folder
 def browse_save_path():
     folder_path = filedialog.askdirectory(title="Select Save Folder")
     if folder_path:
@@ -63,6 +73,7 @@ def browse_save_path():
 
 ctk.CTkButton(path_input_layout, text="Browse", width=80, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=browse_save_path).pack(side="left")
 
+# YouTube URL input area
 url_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
 url_frame.pack(side="left", fill="x", expand=True)
 ctk.CTkLabel(url_frame, text="Video or Playlist URL:", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(anchor="w")
@@ -72,6 +83,7 @@ url_input_layout.pack(fill="x")
 url_entry = ctk.CTkEntry(url_input_layout, placeholder_text="Paste your YouTube link here...")
 url_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
+# Function to make keyboard shortcuts (Copy, Paste, Select All) work
 def handle_hardware_shortcuts(event):
     if event.state & 4 or event.state & 12:
         if event.keycode == 86: 
@@ -93,6 +105,8 @@ url_entry.bind("<KeyPress>", handle_hardware_shortcuts)
 path_entry.bind("<KeyPress>", handle_hardware_shortcuts)
 
 # ==================== Toolbar Section ====================
+# Buttons to select/remove videos and show total size/time
+
 toolbar_frame = ctk.CTkFrame(app, fg_color="transparent")
 toolbar_frame.pack(fill="x", padx=20, pady=(0, 10))
 
@@ -100,6 +114,7 @@ ctk.CTkButton(toolbar_frame, text="Select All", width=90, fg_color="#333", hover
 ctk.CTkButton(toolbar_frame, text="Deselect All", width=90, fg_color="#333", hover_color="#444", command=lambda: toggle_all(False)).pack(side="left", padx=(0, 5))
 ctk.CTkButton(toolbar_frame, text="Remove Selected", width=110, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=lambda: remove_selected()).pack(side="left")
 
+# Dashboard showing totals
 dashboard_frame = ctk.CTkFrame(toolbar_frame, fg_color="transparent")
 dashboard_frame.pack(side="left", padx=20)
 
@@ -111,18 +126,22 @@ ctk.CTkLabel(dashboard_frame, text="Total Size:", font=(messages.FONT_FAMILY, me
 total_size_label = ctk.CTkLabel(dashboard_frame, text="0.0 MB", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold"), text_color="#aaaaaa", width=80, anchor="w")
 total_size_label.pack(side="left")
 
+# Video quality selection and fetch buttons
 quality_layout = ctk.CTkFrame(toolbar_frame, fg_color="transparent")
 quality_layout.pack(side="right")
 
+# Reset sizes when user changes the quality
 def on_quality_change(choice):
     for row in video_rows:
         row['bytes_size'] = -1 
         safe_ui_update(row['size_label'], text="N/A", text_color="white")
     update_dynamic_totals()
 
+# Start fetching sizes in the background
 def on_fetch_sizes_click():
     threading.Thread(target=fetch_all_sizes_worker, daemon=True).start()
 
+# Stop fetching sizes
 def on_stop_fetch_click():
     global is_fetching_sizes
     is_fetching_sizes = False
@@ -131,7 +150,8 @@ def on_stop_fetch_click():
 fetch_action_frame = ctk.CTkFrame(quality_layout, fg_color="transparent")
 fetch_action_frame.pack(side="left", padx=(0, 10))
 
-ctk.CTkButton(fetch_action_frame, text="Fetch Sizes", width=90, fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_fetch_sizes_click).pack(side="left")
+fetch_btn = ctk.CTkButton(fetch_action_frame, text="Fetch Sizes", width=90, fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_fetch_sizes_click)
+fetch_btn.pack(side="left")
 
 stop_fetch_btn = ctk.CTkButton(fetch_action_frame, text="Stop Fetch", width=90, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_fetch_click)
 
@@ -141,6 +161,7 @@ quality_combo.set("Select Quality")
 quality_combo.pack(side="left")
 
 # ==================== Table Header ====================
+# Column titles for the video list
 header_frame = ctk.CTkFrame(app, fg_color="#1e1e1e", height=40, corner_radius=5)
 header_frame.pack(fill="x", padx=20, pady=(0, 5))
 
@@ -154,10 +175,12 @@ ctk.CTkLabel(header_frame, text="Progress", width=120, font=(messages.FONT_FAMIL
 ctk.CTkLabel(header_frame, text="%", width=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")).pack(side="left")
 
 # ==================== List Area ====================
+# The scrolling area where video rows appear
 list_frame = ctk.CTkScrollableFrame(app, fg_color="#2b2b2b")
 list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
 # ==================== Status Bar ====================
+# Text at the very bottom showing what the app is doing
 status_bar = ctk.CTkFrame(app, height=30, fg_color="#1e1e1e", corner_radius=0)
 status_bar.pack(fill="x", side="bottom")
 
@@ -168,6 +191,7 @@ global_warning_label = ctk.CTkLabel(status_bar, text="", font=(messages.FONT_FAM
 global_warning_label.pack(side="left")
 
 # ==================== UI Safety Helpers ====================
+# Safe ways to update text and progress bars without crashing the app
 def safe_ui_update(widget, **kwargs):
     if widget and widget.winfo_exists():
         widget.configure(**kwargs)
@@ -177,12 +201,14 @@ def safe_progress_update(widget, value):
         widget.set(value)
 
 # ==================== Core Functions & Custom Popups ====================
+# Put windows exactly in the middle of the screen
 def center_toplevel(top, width, height):
     app.update_idletasks()
     x = app.winfo_x() + (app.winfo_width() // 2) - (width // 2)
     y = app.winfo_y() + (app.winfo_height() // 2) - (height // 2)
     top.geometry(f"{width}x{height}+{x}+{y}")
 
+# Our custom message box builder
 def custom_msg_box(title, message, msg_type="error"):
     dialog = ctk.CTkToplevel(app)
     dialog.title(title)
@@ -220,6 +246,7 @@ def custom_msg_box(title, message, msg_type="error"):
     ctk.CTkButton(dialog, text=messages.BTN_OK, fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
     app.wait_window(dialog)
 
+# Change raw bytes into readable text like MB or GB
 def format_size(bytes_size):
     if bytes_size <= 0: return "0.0 MB"
     mb = bytes_size / (1024 * 1024)
@@ -228,10 +255,12 @@ def format_size(bytes_size):
         return f"{gb:.2f} GB"
     return f"{mb:.1f} MB"
 
+# Change the text at the bottom bar
 def update_global_status(msg, color="white", warning_msg=""):
     global_status_label.configure(text=f"Status: {msg}", text_color=color)
     global_warning_label.configure(text=warning_msg)
 
+# Calculate the total time and size of selected videos
 def update_dynamic_totals():
     total_bytes = 0
     total_seconds = 0
@@ -267,12 +296,14 @@ def update_dynamic_totals():
         size_text += "+"
     total_size_label.configure(text=size_text)
 
+# Check or uncheck all boxes
 def toggle_all(state):
     for row_data in video_rows:
         if state: row_data["checkbox"].select()
         else: row_data["checkbox"].deselect()
     update_dynamic_totals()
 
+# Delete selected videos from the list
 def remove_selected():
     global video_rows
     for row_data in reversed(video_rows):
@@ -285,6 +316,7 @@ def remove_selected():
     try: app.after(10, lambda: list_frame._parent_canvas.yview_moveto(0.0))
     except: pass
 
+# Change seconds to mm:ss format
 def format_duration(seconds):
     if not seconds: return "00:00"
     m, s = divmod(int(seconds), 60)
@@ -292,6 +324,7 @@ def format_duration(seconds):
     if h > 0: return f"{h}:{m:02d}:{s:02d}"
     return f"{m:02d}:{s:02d}"
 
+# Remove all videos from the list
 def clear_list():
     global video_rows
     for widget in list_frame.winfo_children():
@@ -299,6 +332,7 @@ def clear_list():
     video_rows.clear()
     update_dynamic_totals()
 
+# Draw a single video row on the screen
 def add_video_row(index, title, duration, vid_url, status="Ready", status_color="#28a745"):
     row = ctk.CTkFrame(list_frame, fg_color="#333333", height=50)
     row.pack(side="top", fill="x", pady=2, anchor="n") 
@@ -340,6 +374,7 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
     })
 
 # ==================== Size Calculation Engine ====================
+# Generate the right format string for yt-dlp based on user choice
 def get_ydl_format_string(quality):
     if "Audio Only" in quality: return 'bestaudio/best'
     if "Medium" in quality or "720" in quality: return 'bestvideo[height<=720]+bestaudio/best'
@@ -348,6 +383,7 @@ def get_ydl_format_string(quality):
     if height: return f'bestvideo[height<={height}]+bestaudio/best'
     return 'bestvideo+bestaudio/best'
 
+# Get the size of one video from YouTube
 def fetch_size_for_single_video(row_data, quality):
     global is_fetching_sizes, consecutive_errors
     
@@ -379,7 +415,7 @@ def fetch_size_for_single_video(row_data, quality):
                 app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Blocked", text_color=config.COLOR_RED))
                 with error_lock:
                     consecutive_errors += 1
-                    if consecutive_errors >= 10:
+                    if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
                         is_fetching_sizes = False 
                 return
 
@@ -402,11 +438,12 @@ def fetch_size_for_single_video(row_data, quality):
         app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Error", text_color=config.COLOR_RED))
         with error_lock:
             consecutive_errors += 1
-            if consecutive_errors >= 10:
+            if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
                 is_fetching_sizes = False 
     
     app.after(0, update_dynamic_totals)
 
+# Manage multiple threads to fetch sizes fast
 def fetch_all_sizes_worker():
     global is_fetching_sizes, consecutive_errors
     
@@ -428,16 +465,14 @@ def fetch_all_sizes_worker():
     app.after(0, lambda: fetch_btn.pack_forget() if 'fetch_btn' in globals() else None)
     app.after(0, lambda: stop_fetch_btn.pack(side="left") if 'stop_fetch_btn' in globals() else None)
 
-    MAX_CONCURRENT_WORKERS = 5 
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_WORKERS) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=config.MAX_THREADS) as executor:
         futures = [executor.submit(fetch_size_for_single_video, row, quality) for row in selected_rows]
         concurrent.futures.wait(futures)
 
     app.after(0, lambda: stop_fetch_btn.pack_forget() if 'stop_fetch_btn' in globals() else None)
     app.after(0, lambda: fetch_btn.pack(side="left") if 'fetch_btn' in globals() else None)
     
-    if consecutive_errors >= 10:
+    if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
         app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
         app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error"))
     elif is_fetching_sizes:
@@ -451,7 +486,8 @@ def fetch_all_sizes_worker():
         
     is_fetching_sizes = False
 
-def render_chunk(entries_data, current_idx, qualities, chunk_size=15):
+# Draw videos on screen in groups so the app doesn't freeze
+def render_chunk(entries_data, current_idx, qualities, chunk_size=config.RENDER_CHUNK_SIZE):
     end_idx = min(current_idx + chunk_size, len(entries_data))
     
     for i in range(current_idx, end_idx):
@@ -468,6 +504,7 @@ def render_chunk(entries_data, current_idx, qualities, chunk_size=15):
         app.after(0, update_dynamic_totals) 
         app.after(0, lambda: update_global_status("Data fetched successfully. Ready to use.", "#28a745", ""))
 
+# Search YouTube link and get videos
 def fetch_video_data():
     url = url_entry.get()
     if not url:
@@ -523,11 +560,13 @@ def fetch_video_data():
         app.after(0, lambda: update_global_status("Search Failed.", config.COLOR_RED, ""))
         app.after(0, lambda e=e: custom_msg_box(messages.TITLE_ERROR, messages.MSG_CONN_ERROR, "error"))
 
+# Start searching when button is clicked
 def on_search_click():
     threading.Thread(target=fetch_video_data, daemon=True).start()
 
 ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
 
+# Check if a video is already on the computer
 def find_downloaded_file(save_path, title):
     sanitized = sanitize_filename(title)
     for ext in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']:
@@ -543,12 +582,13 @@ def find_downloaded_file(save_path, title):
     except: pass
     return None
 
+# The main function to download files
 def _download_process(rows_to_download, quality, save_path):
     global is_downloading
     format_str = get_ydl_format_string(quality)
     postprocessors = []
     if "Audio Only" in quality:
-        postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
+        postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': config.AUDIO_BITRATE}]
 
     for row_data in rows_to_download:
         if not is_downloading: break 
@@ -557,6 +597,7 @@ def _download_process(rows_to_download, quality, save_path):
         row_data['dl_state'] = 'preparing'
         app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color=config.COLOR_MAGENTA))
         
+        # Look for messages saying file already exists
         class DownloadLogger:
             def debug(self, msg):
                 if "has already been downloaded" in msg or "already exists" in msg:
@@ -567,6 +608,7 @@ def _download_process(rows_to_download, quality, save_path):
             def warning(self, msg): pass
             def error(self, msg): pass
 
+        # Update progress bar during download
         def progress_hook(d, r=row_data):
             global is_downloading
             if not is_downloading:
@@ -626,6 +668,7 @@ def _download_process(rows_to_download, quality, save_path):
                 row_data['dl_state'] = 'failed'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED))
 
+# Start the download background task
 def download_worker():
     global is_downloading
     save_path = path_entry.get()
@@ -657,6 +700,7 @@ def download_worker():
         
     is_downloading = False
 
+# Ask user if they want fast or slow conversion
 def ask_conversion_speed():
     dialog = ctk.CTkToplevel(app)
     dialog.title(messages.TITLE_SPEED)
@@ -690,6 +734,7 @@ def ask_conversion_speed():
     app.wait_window(dialog)
     return result[0]
 
+# Ask user a Yes or No question
 def custom_ask_yes_no(title, message, icon="⚠️"):
     dialog = ctk.CTkToplevel(app)
     dialog.title(title)
@@ -722,9 +767,11 @@ def custom_ask_yes_no(title, message, icon="⚠️"):
     app.wait_window(dialog)
     return result[0]
 
+# The main function to convert files to MP4 using FFmpeg
 def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_first):
     global is_converting, current_ffmpeg_process
     
+    # Download files first if needed
     if do_download_first:
         global is_downloading
         is_downloading = True
@@ -736,6 +783,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             app.after(0, lambda: update_global_status("Conversion canceled.", "orange", ""))
             return
             
+    # Hide Convert button and show Stop button
     global convert_btn, stop_convert_btn
     app.after(0, lambda: convert_btn.pack_forget() if 'convert_btn' in globals() else None)
     app.after(0, lambda: stop_convert_btn.pack(side="left", padx=10) if 'stop_convert_btn' in globals() else None)
@@ -774,6 +822,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         update_status_msg = "Remuxing" if speed_choice == "fast" else "Re-encoding"
         app.after(0, lambda: update_global_status(f"Converting ({update_status_msg})...", config.COLOR_CYAN, ""))
         
+        # Build FFmpeg command
         cmd = [imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-i', input_file]
         if speed_choice == "fast":
             cmd.extend(['-c', 'copy'])
@@ -781,6 +830,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             cmd.extend(['-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac'])
         cmd.append(output_file)
         
+        # Run FFmpeg
         try:
             current_ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             current_ffmpeg_process.wait() 
@@ -810,9 +860,11 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         finally:
             current_ffmpeg_process = None
             
+    # Show Convert button again
     app.after(0, lambda: stop_convert_btn.pack_forget() if 'stop_convert_btn' in globals() else None)
     app.after(0, lambda: convert_btn.pack(side="left", padx=10) if 'convert_btn' in globals() else None)
     
+    # Clean up old files if asked
     if is_converting:
         app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
         if files_to_delete:
@@ -826,15 +878,20 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     else:
         app.after(0, lambda: update_global_status("Conversion stopped by user.", "orange", ""))
 
+# ==================== Bottom Actions ====================
+# The main big buttons at the bottom of the app
+
 bottom_frame = ctk.CTkFrame(app, fg_color="transparent")
 bottom_frame.pack(pady=10, side="bottom") 
 
 center_actions_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
 center_actions_frame.pack()
 
+# Start download
 def on_download_click():
     threading.Thread(target=download_worker, daemon=True).start()
 
+# Cancel download
 def on_cancel_download_click():
     global is_downloading
     if is_downloading:
@@ -847,6 +904,7 @@ def on_cancel_download_click():
                 safe_progress_update(r['progress'], 0)
                 safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
 
+# Start conversion
 def on_convert_click():
     global is_converting
     save_path = path_entry.get()
@@ -886,6 +944,7 @@ def on_convert_click():
     is_converting = True
     threading.Thread(target=convert_worker, args=(speed_choice, selected_rows, save_path, quality, do_download_first), daemon=True).start()
 
+# Stop conversion
 def on_stop_convert_click():
     global is_converting, current_ffmpeg_process
     is_converting = False
@@ -894,6 +953,7 @@ def on_stop_convert_click():
         except: pass
     update_global_status("Stopping conversion... please wait.", "orange", "")
 
+# Draw the bottom buttons
 ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click).pack(side="left", padx=10)
 ctk.CTkButton(center_actions_frame, text="Cancel Download", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click).pack(side="left", padx=10)
 
@@ -905,4 +965,5 @@ convert_btn.pack(side="left", padx=10)
 
 stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click)
 
+# Keep the window running
 app.mainloop()
