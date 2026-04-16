@@ -42,11 +42,14 @@ convert_btn = None
 stop_convert_btn = None
 
 # --- Custom Logger ---
-# This hides annoying text from yt-dlp in the terminal
+# This controls if we see yt-dlp text in the terminal or not based on config
 class SilentLogger:
-    def debug(self, msg): pass
-    def warning(self, msg): pass
-    def error(self, msg): pass
+    def debug(self, msg): 
+        if config.SHOW_TERMINAL_LOGS: print(msg)
+    def warning(self, msg): 
+        if config.SHOW_TERMINAL_LOGS: print(msg)
+    def error(self, msg): 
+        if config.SHOW_TERMINAL_LOGS: print(msg)
 
 # ==================== Top Section ====================
 # This area holds the Save Path and YouTube URL inputs
@@ -363,15 +366,25 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
     percent_lbl = ctk.CTkLabel(row, text="0%", width=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN))
     percent_lbl.pack(side="left")
 
-    video_rows.append({
+    # Save video data in our dictionary, including a hidden pocket for errors
+    row_data = {
         "frame": row, "checkbox": cb, "title": title, 
         "duration": duration, "progress": prog_bar, 
         "size_label": size_lbl, "status_label": status_lbl,
         "percent_label": percent_lbl,
         "url": vid_url,
         "bytes_size": -1,
-        "dl_state": "ready" 
-    })
+        "dl_state": "ready",
+        "error_msg": "" # Hidden pocket for errors
+    }
+    video_rows.append(row_data)
+
+    # Show error details when user clicks on a failed status
+    def on_status_click(event, r=row_data):
+        if r['dl_state'] == 'failed' and r['error_msg']:
+            custom_msg_box(messages.TITLE_ERROR_DETAILS, r['error_msg'], "error")
+
+    status_lbl.bind("<Button-1>", on_status_click)
 
 # ==================== Size Calculation Engine ====================
 # Generate the right format string for yt-dlp based on user choice
@@ -597,16 +610,19 @@ def _download_process(rows_to_download, quality, save_path):
         row_data['dl_state'] = 'preparing'
         app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color=config.COLOR_MAGENTA))
         
-        # Look for messages saying file already exists
+        # Look for messages saying file already exists and print logs if enabled
         class DownloadLogger:
             def debug(self, msg):
+                if config.SHOW_TERMINAL_LOGS: print(msg)
                 if "has already been downloaded" in msg or "already exists" in msg:
                     row_data['dl_state'] = 'already_exists'
                     app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Already Exists", text_color="#28a745"))
                     app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
                     app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
-            def warning(self, msg): pass
-            def error(self, msg): pass
+            def warning(self, msg): 
+                if config.SHOW_TERMINAL_LOGS: print(msg)
+            def error(self, msg): 
+                if config.SHOW_TERMINAL_LOGS: print(msg)
 
         # Update progress bar during download
         def progress_hook(d, r=row_data):
@@ -661,12 +677,14 @@ def _download_process(rows_to_download, quality, save_path):
                 app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
                 app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
                 
-        except Exception:
+        # Catch the error, save it in the hidden pocket, and change cursor to hand
+        except Exception as e:
             if not is_downloading:
                 pass 
             else:
                 row_data['dl_state'] = 'failed'
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED))
+                row_data['error_msg'] = str(e)
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
 
 # Start the download background task
 def download_worker():
@@ -692,9 +710,13 @@ def download_worker():
 
     _download_process(selected_rows, quality, save_path)
 
+    # Check for errors and show final status without playing sounds
     if is_downloading:
-        app.after(0, lambda: update_global_status("Downloads finished.", "#28a745", ""))
-        config.play_sound("success")
+        failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
+        if failed_count > 0:
+            app.after(0, lambda: update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
+        else:
+            app.after(0, lambda: update_global_status("Downloads finished successfully.", "#28a745", ""))
     else:
         app.after(0, lambda: update_global_status("Downloads canceled by user.", "orange", ""))
         
@@ -797,7 +819,9 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         
         input_file = find_downloaded_file(save_path, row_data['title'])
         if not input_file:
-            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Not Found", text_color=config.COLOR_RED))
+            row_data['dl_state'] = 'failed'
+            row_data['error_msg'] = "File not found in the save path."
+            app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
             continue
             
         if input_file.endswith(('.mp4')):
@@ -839,7 +863,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 raise Exception("KILLED_BY_USER")
                 
             if current_ffmpeg_process.returncode != 0:
-                raise Exception("FFMPEG_ERROR")
+                raise Exception("FFMPEG_ERROR: Something went wrong during conversion.")
             
             app.after(0, lambda r=row_data: r['progress'].stop())
             app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
@@ -848,7 +872,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converted", text_color="#28a745"))
             
             files_to_delete.append(input_file)
-        except Exception:
+        except Exception as e:
             app.after(0, lambda r=row_data: r['progress'].stop())
             app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
             if not is_converting:
@@ -856,7 +880,9 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
                 app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED))
             else:
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Convert Failed", text_color=config.COLOR_RED))
+                row_data['dl_state'] = 'failed'
+                row_data['error_msg'] = str(e)
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
         finally:
             current_ffmpeg_process = None
             
@@ -864,9 +890,14 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     app.after(0, lambda: stop_convert_btn.pack_forget() if 'stop_convert_btn' in globals() else None)
     app.after(0, lambda: convert_btn.pack(side="left", padx=10) if 'convert_btn' in globals() else None)
     
-    # Clean up old files if asked
+    # Check for errors and show final status without playing sounds
     if is_converting:
-        app.after(0, lambda: update_global_status("All conversions completed.", "#28a745", ""))
+        failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
+        if failed_count > 0:
+            app.after(0, lambda: update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
+        else:
+            app.after(0, lambda: update_global_status("All conversions completed successfully.", "#28a745", ""))
+            
         if files_to_delete:
             def ask_cleanup():
                 if custom_ask_yes_no(messages.TITLE_CONFIRM, messages.MSG_CLEANUP):

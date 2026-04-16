@@ -20,7 +20,7 @@ TITLE_SUCCESS = "Success"
 TITLE_INFO = "Information"
 TITLE_CONFIRM = "Confirmation"
 TITLE_SPEED = "Conversion Speed"
-
+TITLE_ERROR_DETAILS = "Error Details"
 # ==================== Popup Messages ====================
 MSG_URL_MISSING = "Please enter a valid YouTube URL to search!"
 MSG_CONN_ERROR = "Failed to connect or fetch data from YouTube.\n\nCheck URL or connection."

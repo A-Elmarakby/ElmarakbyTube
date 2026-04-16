@@ -39,3 +39,6 @@ def play_sound(sound_type="info"):
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     else:
         winsound.MessageBeep(winsound.MB_ICONASTERISK)
+
+# Show errors in the black terminal screen for debugging (True = Yes, False = No)
+SHOW_TERMINAL_LOGS = True
