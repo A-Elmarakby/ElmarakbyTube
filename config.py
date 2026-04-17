@@ -42,3 +42,7 @@ def play_sound(sound_type="info"):
 
 # Show errors in the black terminal screen for debugging (True = Yes, False = No)
 SHOW_TERMINAL_LOGS = True
+
+# ==================== Contact Button Settings ====================
+# Time in milliseconds between each pulse animation for the Contact button (10000 = 10 seconds)
+CONTACT_PULSE_INTERVAL = 10000

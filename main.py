@@ -13,7 +13,10 @@ import concurrent.futures
 # Import our custom settings and messages files
 import config
 import messages
-
+# ==================== NEW V2 UPDATES (Start) ====================
+import json
+import webbrowser
+# ==================== NEW V2 UPDATES (End) ====================
 # --- Window Setup ---
 # Make the app dark, set its size, and give it a title
 ctk.set_appearance_mode("Dark")
@@ -995,6 +998,121 @@ convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=1
 convert_btn.pack(side="left", padx=10)
 
 stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click)
+
+# ==================== V2 Features: Contact, Onboarding, Exit ====================
+
+# 1. Contact Us Button & Popup
+def show_contact_popup():
+    dialog = ctk.CTkToplevel(app)
+    dialog.title("Contact Us")
+    center_toplevel(dialog, 400, 250)
+    dialog.transient(app)
+    dialog.grab_set()
+    
+    lbl = ctk.CTkLabel(dialog, text=messages.MSG_CONTACT_WHERE, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"))
+    lbl.pack(pady=(20, 15))
+    
+    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    btn_frame.pack()
+    
+    # Create contact buttons that open browser links
+    ctk.CTkButton(btn_frame, text="LinkedIn", fg_color="#0077b5", hover_color="#005582", width=120, command=lambda: webbrowser.open(messages.URL_LINKEDIN)).grid(row=0, column=0, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="WhatsApp", fg_color="#25D366", hover_color="#1DA851", width=120, command=lambda: webbrowser.open(messages.URL_WHATSAPP)).grid(row=0, column=1, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="GitHub", fg_color="#333", hover_color="#111", width=120, command=lambda: webbrowser.open(messages.URL_GITHUB)).grid(row=1, column=0, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="Email", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, width=120, command=lambda: webbrowser.open(messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
+
+# Create the button at the bottom right corner
+contact_btn = ctk.CTkButton(app, text=messages.BTN_CONTACT_US, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=show_contact_popup, corner_radius=20)
+contact_btn.place(relx=0.98, rely=0.98, anchor="se")
+
+# Animate the button slightly to catch attention (Pulse Effect)
+def pulse_contact_button():
+    contact_btn.configure(fg_color=config.COLOR_CYAN) # Change to Cyan
+    app.after(400, lambda: contact_btn.configure(fg_color=config.COLOR_MAGENTA)) # Back to Magenta quickly
+    app.after(config.CONTACT_PULSE_INTERVAL, pulse_contact_button) # Repeat based on config
+
+app.after(config.CONTACT_PULSE_INTERVAL, pulse_contact_button)
+
+# 2. Smart Exit Confirmation
+def custom_exit_dialog(title, message, green_text, red_text):
+    dialog = ctk.CTkToplevel(app)
+    dialog.title(title)
+    center_toplevel(dialog, 450, 200)
+    dialog.transient(app)
+    dialog.grab_set()
+    
+    config.play_sound("warning")
+    result = ["cancel"]
+    def set_res(val):
+        result[0] = val
+        dialog.destroy()
+        
+    lbl = ctk.CTkLabel(dialog, text=message, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400)
+    lbl.pack(pady=30, padx=20)
+    
+    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    btn_frame.pack()
+    
+    ctk.CTkButton(btn_frame, text=green_text, fg_color="#28a745", hover_color="#218838", command=lambda: set_res("stay")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=red_text, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=lambda: set_res("leave")).pack(side="left", padx=10)
+    
+    app.wait_window(dialog)
+    return result[0]
+
+def on_closing():
+    # First friendly prompt
+    choice = custom_exit_dialog(messages.TITLE_EXIT, messages.MSG_EXIT_ASK, messages.BTN_STAY, messages.BTN_LEAVE)
+    
+    if choice == "leave":
+        # Check if app is busy doing work
+        if is_downloading or is_converting or is_fetching_sizes:
+            warn_choice = custom_exit_dialog(messages.TITLE_EXIT_WARN, messages.MSG_EXIT_WARN, messages.BTN_WAIT, messages.BTN_FORCE_QUIT)
+            if warn_choice == "leave": # User clicked BTN_FORCE_QUIT (the red button)
+                app.destroy()
+        else:
+            app.destroy()
+
+# Tell the app to run on_closing() when the X button is clicked
+app.protocol("WM_DELETE_WINDOW", on_closing)
+
+# 3. Welcome Onboarding Popup
+def show_welcome_onboarding():
+    data_file = "user_data.json"
+    
+    # Stop if we already know the user
+    if os.path.exists(data_file):
+        return
+
+    dialog = ctk.CTkToplevel(app)
+    dialog.title(messages.TITLE_WELCOME)
+    center_toplevel(dialog, 400, 200)
+    dialog.transient(app)
+    dialog.grab_set()
+    
+    # Disable the standard close window 'X' button so they MUST enter a name
+    dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+    
+    lbl = ctk.CTkLabel(dialog, text=messages.MSG_WELCOME_ASK, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
+    lbl.pack(pady=(30, 10))
+    
+    name_entry = ctk.CTkEntry(dialog, placeholder_text=messages.PLACEHOLDER_NAME, width=200, justify="center")
+    name_entry.pack(pady=10)
+    
+    def save_name():
+        name = name_entry.get().strip()
+        if name:
+            with open(data_file, "w", encoding="utf-8") as f:
+                json.dump({"name": name}, f)
+            dialog.destroy()
+            
+            # Show the second friendly greeting popup
+            greet_msg = messages.MSG_WELCOME_GREET.replace("{name}", name)
+            custom_msg_box(messages.TITLE_WELCOME, greet_msg, "success")
+            
+    ctk.CTkButton(dialog, text=messages.BTN_CONFIRM_NAME, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name).pack(pady=10)
+
+# Run the onboarding check a split second after the app opens
+app.after(500, show_welcome_onboarding)
 
 # Keep the window running
 app.mainloop()
