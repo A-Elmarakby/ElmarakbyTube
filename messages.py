@@ -38,9 +38,15 @@ MSG_CLEANUP = "Conversion complete! Do you want to delete the original downloade
 # Welcome Onboarding
 TITLE_WELCOME = "Welcome"
 MSG_WELCOME_ASK = "أهلاً بيك يا صديقي، ممكن نتعرف؟"
-MSG_WELCOME_GREET = "أهلاً وسهلاً بيك يا {name}، نتمنى لك تجربة ممتعة 🎉"
-BTN_CONFIRM_NAME = "تأكيد"
-PLACEHOLDER_NAME = "اكتب اسمك هنا..."
+MSG_WELCOME_GREET = "أهلاً وسهلاً بيك يا {name} نتمنى لك تجربة ممتعة 🎉"
+BTN_CONFIRM_NAME = "يلا نبدأ"
+PLACEHOLDER_NAME = "اكتب اسمك هنا... (o_o)"
+TITLE_ALERT = "تنبيه"
+MSG_NAME_REQUIRED = "ممكن تقولنا اسمك الأول؟"
+MSG_INVALID_NAME = "ممكن تقولنا اسمك الحقيقي (^_^)\nالأرقام والرموز مش مدعوين هنا "
+
+# --- Welcome Dialog OK Button ---
+WELCOME_BTN = "يلا بينا!"
 
 # Exit Protocol
 TITLE_EXIT = "Exit Confirmation"
@@ -54,8 +60,10 @@ BTN_FORCE_QUIT = "ايوه اقفل"
 BTN_WAIT = "لا استنى"
 
 # Contact Us
-BTN_CONTACT_US = "تواصل معنا"
-MSG_CONTACT_WHERE = "نكمل كلامنا فين؟ 👇"
+BTN_CONTACT_US = "Contact Us"
+FONT_SIZE_CONTACT_US = 14
+FONT_FAMILY_CONTACT_US = "Segoe UI"
+MSG_CONTACT_WHERE = "تحب نكمل كلامنا فين؟ "
 URL_LINKEDIN = "https://www.linkedin.com/in/a-elmarakby/"
 URL_WHATSAPP = "https://wa.me/201010043281"
 URL_GITHUB = "https://github.com/A-Elmarakby"

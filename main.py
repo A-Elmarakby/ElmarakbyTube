@@ -16,6 +16,7 @@ import messages
 # ==================== NEW V2 UPDATES (Start) ====================
 import json
 import webbrowser
+from PIL import Image
 # ==================== NEW V2 UPDATES (End) ====================
 # --- Window Setup ---
 # Make the app dark, set its size, and give it a title
@@ -90,25 +91,44 @@ url_entry = ctk.CTkEntry(url_input_layout, placeholder_text="Paste your YouTube 
 url_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
 # Function to make keyboard shortcuts (Copy, Paste, Select All) work
-def handle_hardware_shortcuts(event):
-    if event.state & 4 or event.state & 12:
-        if event.keycode == 86: 
-            try: event.widget.event_generate("<<Paste>>")
-            except: pass
-            return "break"
-        elif event.keycode == 67: 
-            try: event.widget.event_generate("<<Copy>>")
-            except: pass
-            return "break"
-        elif event.keycode == 65: 
+# Global Keyboard Shortcuts Handler (Works for ALL input fields regardless of keyboard language)
+def global_hardware_shortcuts(event):
+    # Make sure the Ctrl key is pressed (code 4 means Ctrl in Windows)
+    has_ctrl = (event.state & 4) != 0
+    has_shift = (event.state & 1) != 0
+
+    if has_ctrl:
+        if event.keycode == 65: # A (Select All)
             try:
                 event.widget.select_range(0, 'end')
                 event.widget.icursor('end')
             except: pass
             return "break"
+        elif event.keycode == 67: # C (Copy)
+            try: event.widget.event_generate("<<Copy>>")
+            except: pass
+            return "break"
+        elif event.keycode == 86: # V (Paste)
+            try: event.widget.event_generate("<<Paste>>")
+            except: pass
+            return "break"
+        elif event.keycode == 88: # X (Cut)
+            try: event.widget.event_generate("<<Cut>>")
+            except: pass
+            return "break"
+        elif event.keycode == 90: # Z (Undo / Redo)
+            try:
+                if has_shift:
+                    event.widget.event_generate("<<Redo>>") # Ctrl + Shift + Z
+                else:
+                    event.widget.event_generate("<<Undo>>") # Ctrl + Z
+            except: pass
+            return "break"
 
-url_entry.bind("<KeyPress>", handle_hardware_shortcuts)
-path_entry.bind("<KeyPress>", handle_hardware_shortcuts)
+# Bind shortcuts globally to the whole app
+app.bind_all("<KeyPress>", global_hardware_shortcuts)
+
+
 
 # ==================== Toolbar Section ====================
 # Buttons to select/remove videos and show total size/time
@@ -1001,6 +1021,68 @@ stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", widt
 
 # ==================== V2 Features: Contact, Onboarding, Exit ====================
 
+def apply_bidi(text):
+    """Force Right-to-Left layout for normal text, labels, and buttons using Unicode."""
+    text = str(text)
+    if any('\u0600' <= c <= '\u06FF' for c in text):
+        text = text.replace('،', '\u200F،\u200F').replace('؟', '\u200F؟\u200F').replace('!', '\u200F!\u200F')
+        return '\u202B' + text + '\u202C'
+    return text
+
+def add_dialog_icon(dialog):
+    """Safely apply the app icon to any popup dialog."""
+    def apply():
+        try: dialog.iconbitmap(config.ICON_FILE)
+        except: pass
+    dialog.after(200, apply)
+
+def is_valid_name(name):
+    """Check if the name follows the rules in config.py"""
+    name = name.strip()
+    
+    # Check 6: Empty spaces only
+    if not name:
+        return False, messages.MSG_NAME_REQUIRED
+        
+    # Check 3 & 4: Min and Max length
+    if len(name) < config.NAME_MIN_LENGTH or len(name) > config.NAME_MAX_LENGTH:
+        return False, messages.MSG_INVALID_NAME
+        
+    # Check 1: Numbers
+    if not config.NAME_ALLOW_NUMBERS and any(char.isdigit() for char in name):
+        return False, messages.MSG_INVALID_NAME
+        
+    # Check 2: Symbols (only letters and spaces allowed)
+    if not config.NAME_ALLOW_SYMBOLS:
+        if not name.replace(" ", "").isalpha():
+            return False, messages.MSG_INVALID_NAME
+            
+    # Check 5: Absurd repetition
+    if config.NAME_MAX_REPEATS > 0:
+        for i in range(len(name) - config.NAME_MAX_REPEATS):
+            chunk = name[i : i + config.NAME_MAX_REPEATS + 1]
+            if len(set(chunk)) == 1 and chunk[0] != " ":
+                return False, messages.MSG_INVALID_NAME
+                
+    return True, ""
+
+def custom_alert_dialog(title, message):
+    """Reusable alert popup with app icon and styling."""
+    alert_dlg = ctk.CTkToplevel(app)
+    alert_dlg.title(apply_bidi(title))
+    center_toplevel(alert_dlg, 400, 160)
+    alert_dlg.transient(app)
+    alert_dlg.grab_set()
+    add_dialog_icon(alert_dlg)
+    
+    config.play_sound("warning")
+    btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
+    
+    lbl = ctk.CTkLabel(alert_dlg, text=apply_bidi(message), font=btn_font, wraplength=350)
+    lbl.pack(pady=(30, 20))
+    ctk.CTkButton(alert_dlg, text="OK", font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy).pack()
+    app.wait_window(alert_dlg)
+
 # 1. Contact Us Button & Popup
 def show_contact_popup():
     dialog = ctk.CTkToplevel(app)
@@ -1008,38 +1090,66 @@ def show_contact_popup():
     center_toplevel(dialog, 400, 250)
     dialog.transient(app)
     dialog.grab_set()
+    add_dialog_icon(dialog)
     
-    lbl = ctk.CTkLabel(dialog, text=messages.MSG_CONTACT_WHERE, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"))
+    lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_CONTACT_WHERE), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"))
     lbl.pack(pady=(20, 15))
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-    # Create contact buttons that open browser links
-    ctk.CTkButton(btn_frame, text="LinkedIn", fg_color="#0077b5", hover_color="#005582", width=120, command=lambda: webbrowser.open(messages.URL_LINKEDIN)).grid(row=0, column=0, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="WhatsApp", fg_color="#25D366", hover_color="#1DA851", width=120, command=lambda: webbrowser.open(messages.URL_WHATSAPP)).grid(row=0, column=1, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="GitHub", fg_color="#333", hover_color="#111", width=120, command=lambda: webbrowser.open(messages.URL_GITHUB)).grid(row=1, column=0, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="Email", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, width=120, command=lambda: webbrowser.open(messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
+    btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
+    
+    
+    ctk.CTkButton(btn_frame, text="LinkedIn", font=btn_font, fg_color=config.SOCIAL_LINKEDIN_COLOR, hover=True, hover_color=config.SOCIAL_LINKEDIN_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_LINKEDIN)).grid(row=0, column=0, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="WhatsApp", font=btn_font, fg_color=config.SOCIAL_WHATSAPP_COLOR, hover=True, hover_color=config.SOCIAL_WHATSAPP_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_WHATSAPP)).grid(row=0, column=1, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="GitHub", font=btn_font, fg_color=config.SOCIAL_GITHUB_COLOR, hover=True, hover_color=config.SOCIAL_GITHUB_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_GITHUB)).grid(row=1, column=0, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="Email", font=btn_font, fg_color=config.SOCIAL_EMAIL_COLOR, hover=True, hover_color=config.SOCIAL_EMAIL_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
+#############################
+# Add Contact Button inside the existing status_bar at the bottom right
+# Load the colored icon
+contact_icon = ctk.CTkImage(
+    light_image=Image.open(config.CONTACT_ICON_PATH),
+    dark_image=Image.open(config.CONTACT_ICON_PATH),
+    size=config.CONTACT_ICON_SIZE
+)
 
-# Create the button at the bottom right corner
-contact_btn = ctk.CTkButton(app, text=messages.BTN_CONTACT_US, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=show_contact_popup, corner_radius=20)
-contact_btn.place(relx=0.98, rely=0.98, anchor="se")
+# 1. Create the button (Text only)
+contact_btn = ctk.CTkButton(status_bar, text=messages.BTN_CONTACT_US, font=("Segoe UI", 12, "bold"), fg_color=config.CONTACT_COLOR_1, hover_color=config.CONTACT_HOVER_1, width=config.CONTACT_BTN_WIDTH, height=config.CONTACT_BTN_HEIGHT, corner_radius=config.CONTACT_CORNER_RADIUS, command=show_contact_popup)
+# Pack button first (goes to far right)
+contact_btn.pack(side="right", padx=(5, 25), pady=2) 
 
-# Animate the button slightly to catch attention (Pulse Effect)
-def pulse_contact_button():
-    contact_btn.configure(fg_color=config.COLOR_CYAN) # Change to Cyan
-    app.after(400, lambda: contact_btn.configure(fg_color=config.COLOR_MAGENTA)) # Back to Magenta quickly
-    app.after(config.CONTACT_PULSE_INTERVAL, pulse_contact_button) # Repeat based on config
+# 2. Create a label for the icon 
+icon_label = ctk.CTkLabel(status_bar, text="", image=contact_icon)
+# Pack icon second (places it to the left of the button)
+icon_label.pack(side="right", padx=(10, 0), pady=2)
 
-app.after(config.CONTACT_PULSE_INTERVAL, pulse_contact_button)
+# Function to handle the pulse animation (Background Toggle)
+def animate_contact_btn(current_state=1):
+    if current_state == 1:
+        # Apply Color 1 (Magenta) and wait for its duration
+        contact_btn.configure(fg_color=config.CONTACT_COLOR_1, hover_color=config.CONTACT_HOVER_1)
+        # Call this function again with state 2
+        status_bar.after(config.CONTACT_DURATION_COLOR_1, animate_contact_btn, 2)
+    else:
+        # Apply Color 2 (Cyan) and wait for its duration
+        contact_btn.configure(fg_color=config.CONTACT_COLOR_2, hover_color=config.CONTACT_HOVER_2)
+        # Call this function again with state 1
+        status_bar.after(config.CONTACT_DURATION_COLOR_2, animate_contact_btn, 1)
+
+# Start animation (It will immediately apply Magenta)
+animate_contact_btn(1)
+#######################
+
 
 # 2. Smart Exit Confirmation
-def custom_exit_dialog(title, message, green_text, red_text):
+def v2_exit_dialog(title, message, green_text, red_text):
     dialog = ctk.CTkToplevel(app)
     dialog.title(title)
     center_toplevel(dialog, 450, 200)
     dialog.transient(app)
     dialog.grab_set()
+    add_dialog_icon(dialog)
     
     config.play_sound("warning")
     result = ["cancel"]
@@ -1047,71 +1157,95 @@ def custom_exit_dialog(title, message, green_text, red_text):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text=message, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400)
+    lbl = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400)
     lbl.pack(pady=30, padx=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
+    btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    ctk.CTkButton(btn_frame, text=green_text, fg_color="#28a745", hover_color="#218838", command=lambda: set_res("stay")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=red_text, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=lambda: set_res("leave")).pack(side="left", padx=10)
-    
+    ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, command=lambda: set_res("stay")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, command=lambda: set_res("leave")).pack(side="left", padx=10)
     app.wait_window(dialog)
     return result[0]
 
 def on_closing():
-    # First friendly prompt
-    choice = custom_exit_dialog(messages.TITLE_EXIT, messages.MSG_EXIT_ASK, messages.BTN_STAY, messages.BTN_LEAVE)
-    
+    choice = v2_exit_dialog(messages.TITLE_EXIT, messages.MSG_EXIT_ASK, messages.BTN_STAY, messages.BTN_LEAVE)
     if choice == "leave":
-        # Check if app is busy doing work
         if is_downloading or is_converting or is_fetching_sizes:
-            warn_choice = custom_exit_dialog(messages.TITLE_EXIT_WARN, messages.MSG_EXIT_WARN, messages.BTN_WAIT, messages.BTN_FORCE_QUIT)
-            if warn_choice == "leave": # User clicked BTN_FORCE_QUIT (the red button)
+            warn_choice = v2_exit_dialog(messages.TITLE_EXIT_WARN, messages.MSG_EXIT_WARN, messages.BTN_WAIT, messages.BTN_FORCE_QUIT)
+            if warn_choice == "leave":
                 app.destroy()
         else:
             app.destroy()
 
-# Tell the app to run on_closing() when the X button is clicked
 app.protocol("WM_DELETE_WINDOW", on_closing)
 
 # 3. Welcome Onboarding Popup
 def show_welcome_onboarding():
     data_file = "user_data.json"
-    
-    # Stop if we already know the user
     if os.path.exists(data_file):
         return
 
     dialog = ctk.CTkToplevel(app)
     dialog.title(messages.TITLE_WELCOME)
-    center_toplevel(dialog, 400, 200)
+    center_toplevel(dialog, 450, 220)
     dialog.transient(app)
     dialog.grab_set()
+    add_dialog_icon(dialog)
     
-    # Disable the standard close window 'X' button so they MUST enter a name
-    dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+    btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    lbl = ctk.CTkLabel(dialog, text=messages.MSG_WELCOME_ASK, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
-    lbl.pack(pady=(30, 10))
+    def on_welcome_close():
+        custom_alert_dialog(messages.TITLE_ALERT, messages.MSG_NAME_REQUIRED)
+
+    dialog.protocol("WM_DELETE_WINDOW", on_welcome_close)
     
-    name_entry = ctk.CTkEntry(dialog, placeholder_text=messages.PLACEHOLDER_NAME, width=200, justify="center")
+    lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_WELCOME_ASK), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
+    lbl.pack(pady=(20, 10))
+    
+    name_entry = ctk.CTkEntry(
+        dialog, 
+        placeholder_text=apply_bidi(messages.PLACEHOLDER_NAME), 
+        placeholder_text_color="#999999",
+        width=280, 
+        height=40,
+        font=btn_font,
+        justify="center"
+    )
     name_entry.pack(pady=10)
     
     def save_name():
         name = name_entry.get().strip()
-        if name:
+        
+        # Validate using our new smart function
+        is_valid, error_msg = is_valid_name(name)
+        
+        if is_valid:
             with open(data_file, "w", encoding="utf-8") as f:
                 json.dump({"name": name}, f)
             dialog.destroy()
             
-            # Show the second friendly greeting popup
-            greet_msg = messages.MSG_WELCOME_GREET.replace("{name}", name)
-            custom_msg_box(messages.TITLE_WELCOME, greet_msg, "success")
+            # Extract FIRST name only for greeting
+            first_name = name.split()[0]
+            greet_msg = messages.MSG_WELCOME_GREET.replace("{name}", first_name)
             
-    ctk.CTkButton(dialog, text=messages.BTN_CONFIRM_NAME, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name).pack(pady=10)
+            greet_dialog = ctk.CTkToplevel(app)
+            greet_dialog.title(messages.TITLE_WELCOME)
+            center_toplevel(greet_dialog, 500, 200)
+            add_dialog_icon(greet_dialog)
+            config.play_sound("success")
 
-# Run the onboarding check a split second after the app opens
+            # 1. Display the welcome message in the dialog
+            ctk.CTkLabel(greet_dialog, text=apply_bidi(greet_msg), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY, "bold")).pack(pady=40, padx=20)
+
+            # 2. Create the 'OK' button with hover effect to close the greeting dialog (Added apply_bidi for Arabic text)
+            ctk.CTkButton(greet_dialog, text=apply_bidi(messages.WELCOME_BTN), font=btn_font, fg_color=config.WELCOME_BTN_COLOR, hover=True, hover_color=config.WELCOME_BTN_HOVER, width=config.WELCOME_BTN_WIDTH, command=greet_dialog.destroy).pack()
+        else:
+            custom_alert_dialog(messages.TITLE_ALERT, error_msg)
+            
+    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONFIRM_NAME), font=btn_font, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name).pack(pady=10)
+
 app.after(500, show_welcome_onboarding)
 
 # Keep the window running
