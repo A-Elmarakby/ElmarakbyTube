@@ -46,7 +46,7 @@ MSG_NAME_REQUIRED = "ممكن تقولنا اسمك الأول؟"
 MSG_INVALID_NAME = "ممكن تقولنا اسمك الحقيقي (^_^)\nالأرقام والرموز مش مدعوين هنا "
 
 # --- Welcome Dialog OK Button ---
-WELCOME_BTN = "يلا بينا!"
+WELCOME_BTN = "يلا بينا..."
 
 # Exit Protocol
 TITLE_EXIT = "Exit Confirmation"
