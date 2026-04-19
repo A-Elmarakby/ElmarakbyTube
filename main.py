@@ -639,25 +639,29 @@ def _download_process(rows_to_download, quality, save_path):
     if "Audio Only" in quality:
         postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': config.AUDIO_BITRATE}]
 
+    # Define the logger ONCE outside the loop for better memory performance
+    class DownloadLogger:
+        def __init__(self, row_data):
+            self.row_data = row_data
+            
+        def debug(self, msg):
+            if config.SHOW_TERMINAL_LOGS: print(msg)
+            if "has already been downloaded" in msg or "already exists" in msg:
+                self.row_data['dl_state'] = 'already_exists'
+                app.after(0, lambda r=self.row_data: safe_ui_update(r['status_label'], text="Already Exists", text_color="#28a745"))
+                app.after(0, lambda r=self.row_data: safe_progress_update(r['progress'], 1.0))
+                app.after(0, lambda r=self.row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+        def warning(self, msg): 
+            if config.SHOW_TERMINAL_LOGS: print(msg)
+        def error(self, msg): 
+            if config.SHOW_TERMINAL_LOGS: print(msg)
+
     for row_data in rows_to_download:
         if not _download_event.is_set(): break 
         if not row_data['frame'].winfo_exists(): continue 
         
         row_data['dl_state'] = 'preparing'
         app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color=config.COLOR_MAGENTA))
-        
-        class DownloadLogger:
-            def debug(self, msg):
-                if config.SHOW_TERMINAL_LOGS: print(msg)
-                if "has already been downloaded" in msg or "already exists" in msg:
-                    row_data['dl_state'] = 'already_exists'
-                    app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Already Exists", text_color="#28a745"))
-                    app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
-                    app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
-            def warning(self, msg): 
-                if config.SHOW_TERMINAL_LOGS: print(msg)
-            def error(self, msg): 
-                if config.SHOW_TERMINAL_LOGS: print(msg)
 
         def progress_hook(d, r=row_data):
             if not _download_event.is_set():
@@ -694,7 +698,7 @@ def _download_process(rows_to_download, quality, save_path):
             'quiet': True,
             'no_warnings': True,
             'continuedl': True, 
-            'logger': DownloadLogger(), 
+            'logger': DownloadLogger(row_data), # Pass the current row to the logger
             'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe() 
         }
         if postprocessors:
@@ -754,6 +758,7 @@ def download_worker():
                 app.after(0, lambda: update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
             else:
                 app.after(0, lambda: update_global_status("Downloads finished successfully.", "#28a745", ""))
+                app.after(0, lambda: config.play_sound("success")) # Play success sound
         else:
             app.after(0, lambda: update_global_status("Downloads canceled by user.", "orange", ""))
             
@@ -941,6 +946,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 app.after(0, lambda: update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
             else:
                 app.after(0, lambda: update_global_status("All conversions completed successfully.", "#28a745", ""))
+                app.after(0, lambda: config.play_sound("success")) # Play success sound
                 
             if files_to_delete:
                 def ask_cleanup():
@@ -986,12 +992,12 @@ def on_cancel_download_click():
                 safe_progress_update(r['progress'], 0)
                 safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
 # Start conversion
+# Start conversion
 def on_convert_click():
-    # Check if ANY operation (download, fetch, or convert) is currently running
-    if not _operation_lock.acquire(blocking=False):
+    # Check if ANY operation is currently running using Events (Safe for UI thread)
+    if _fetch_event.is_set() or _download_event.is_set() or _convert_event.is_set():
         custom_msg_box(messages.TITLE_WARNING, "An operation is already running. Please wait.", "warning")
         return
-    _operation_lock.release() # Release it quickly so the worker thread can lock it safely
         
     save_path = path_entry.get()
     if not save_path or not os.path.isdir(save_path):
@@ -1002,6 +1008,14 @@ def on_convert_click():
     if not selected_rows:
         custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_CONV, "warning")
         return
+
+    # Check for incomplete (.part) files to warn the user
+    for r in selected_rows:
+        sanitized = sanitize_filename(r['title'])
+        part_file_pattern = os.path.join(save_path, f"{sanitized}*.part")
+        if glob.glob(part_file_pattern):
+            custom_msg_box(messages.TITLE_WARNING, f"'{r['title']}' is not fully downloaded. Please download it again first.", "warning")
+            return
         
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
@@ -1215,7 +1229,31 @@ app.protocol("WM_DELETE_WINDOW", on_closing)
 
 # 3. Welcome Onboarding Popup
 def show_welcome_onboarding():
-    data_file = "user_data.json"
+    import sys
+    import os
+    
+    # Check if a custom directory is set in config
+    if config.USER_DATA_SAVE_DIR.strip():
+        base_dir = config.USER_DATA_SAVE_DIR
+    else:
+        # Get the hidden AppData/Roaming folder in Windows
+        appdata = os.getenv('APPDATA')
+        if appdata:
+            # Create a special folder for our app inside AppData
+            base_dir = os.path.join(appdata, "ElmarakbyTube")
+        else:
+            # Fallback to the app's current folder if AppData is not found
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+    # Create the folder safely if it does not exist
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # Build the full path to the json file
+    data_file = os.path.join(base_dir, config.USER_DATA_FILE_NAME)
+    
     if os.path.exists(data_file):
         return
 

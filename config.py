@@ -32,15 +32,46 @@ RENDER_CHUNK_SIZE = 15
 # Default audio quality for MP3 downloads (Options: "128", "192", "320")
 AUDIO_BITRATE = "192"
 
+import os
+
 # ==================== System Sounds ====================
+# 1. Play a sound when a task finishes successfully? (True = Yes, False = No)
+PLAY_SUCCESS_SOUND = True
+
+# 2. Source of the success sound ("windows" or "custom")
+SUCCESS_SOUND_SOURCE = "windows"
+
+# 3. If source is "custom", type the path to your .wav file (e.g., "success.wav")
+CUSTOM_SUCCESS_SOUND_PATH = "success.wav"
+
 def play_sound(sound_type="info"):
-    """Plays Windows system sounds based on event type"""
-    if sound_type == "error":
+    """Plays system or custom sounds based on event type"""
+    if sound_type == "success":
+        if not PLAY_SUCCESS_SOUND:
+            return # Stop if sound is disabled
+        
+        if SUCCESS_SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_SUCCESS_SOUND_PATH):
+            # Play the custom .wav file
+            winsound.PlaySound(CUSTOM_SUCCESS_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            # Play default Windows success sound
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            
+    elif sound_type == "error":
         winsound.MessageBeep(winsound.MB_ICONHAND)
     elif sound_type == "warning":
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     else:
         winsound.MessageBeep(winsound.MB_ICONASTERISK)
+
+# Choose whether the app should play a sound when a task finishes successfully (True = Yes, False = No)
+PLAY_SUCCESS_SOUND = True
+# Type of sound to play on success (Options: "success", "info", "warning", "error")
+SUCCESS_SOUND_TYPE = "success"
+
+# --- App Data Files ---
+# The name of the file where user data (like their name) is saved
+USER_DATA_FILE_NAME = "user_data.json"
 
 # Show errors in the black terminal screen for debugging (True = Yes, False = No)
 SHOW_TERMINAL_LOGS = True
@@ -63,7 +94,7 @@ CONTACT_ICON_SIZE = (22, 22)        # Width and Height of the icon
 
 # Pulse animation timing (in milliseconds)
 CONTACT_DURATION_COLOR_1 = 1000  
-CONTACT_DURATION_COLOR_2 = 2000  
+CONTACT_DURATION_COLOR_2 = 1000  
 
 # Background colors
 CONTACT_COLOR_1 = COLOR_MAGENTA
@@ -111,3 +142,11 @@ NAME_MAX_REPEATS = 2
 WELCOME_BTN_WIDTH = 100
 WELCOME_BTN_COLOR = COLOR_MAGENTA
 WELCOME_BTN_HOVER = COLOR_MAGENTA_HOVER
+
+# ==================== App Data Settings ====================
+# The name of the file where user data (like name) is saved
+USER_DATA_FILE_NAME = "user_data.json"
+
+# The folder path to save the data file. 
+# Leave it empty "" to save it in the same folder as the app.
+USER_DATA_SAVE_DIR = ""
