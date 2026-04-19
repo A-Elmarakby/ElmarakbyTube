@@ -150,3 +150,7 @@ USER_DATA_FILE_NAME = "user_data.json"
 # The folder path to save the data file. 
 # Leave it empty "" to save it in the same folder as the app.
 USER_DATA_SAVE_DIR = ""
+
+# ==================== Search Button Settings ====================
+SEARCH_ICON_PATH = "search_icon.png" # Path to your search icon image
+SEARCH_ICON_SIZE = (15, 15)

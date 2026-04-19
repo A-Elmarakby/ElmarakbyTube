@@ -32,6 +32,7 @@ MSG_INVALID_PATH = "Please select a valid save path."
 MSG_SPEED_PROMPT = "Choose conversion speed:"
 MSG_DL_REQUIRED = "Some files need to be downloaded first. Download them now?"
 MSG_CLEANUP = "Conversion complete! Do you want to delete the original downloaded files to save space?"
+MSG_OPERATION_RUNNING = "An operation is already running. Please wait."
 
 # ==================== NEW V2 UPDATES ====================
 

@@ -3,6 +3,7 @@ import customtkinter as ctk
 import yt_dlp
 from yt_dlp.utils import sanitize_filename
 import threading
+import sys
 import os
 import glob
 import subprocess
@@ -489,7 +490,7 @@ def fetch_all_sizes_worker():
     
     # Ensure no other operation is running
     if not _operation_lock.acquire(blocking=False):
-        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, "An operation is already running. Please wait.", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
     try:
@@ -614,7 +615,15 @@ def fetch_video_data():
 def on_search_click():
     threading.Thread(target=fetch_video_data, daemon=True).start()
 
-ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
+# Load the search icon image safely
+search_icon = ctk.CTkImage(
+    light_image=Image.open(config.SEARCH_ICON_PATH),
+    dark_image=Image.open(config.SEARCH_ICON_PATH),
+    size=config.SEARCH_ICON_SIZE
+)
+
+# Create the search button using the image instead of text
+ctk.CTkButton(url_input_layout, text="", image=search_icon, width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
 
 # Check if a video is already on the computer
 def find_downloaded_file(save_path, title):
@@ -726,7 +735,7 @@ def _download_process(rows_to_download, quality, save_path):
 def download_worker():
     # Ensure no other operation is running at the same time
     if not _operation_lock.acquire(blocking=False):
-        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, "An operation is already running. Please wait.", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
     try:
@@ -793,9 +802,11 @@ def ask_conversion_speed():
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-    ctk.CTkButton(btn_frame, text=messages.BTN_FAST, fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res("fast")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=messages.BTN_SLOW, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=90, command=lambda: set_res("slow")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=messages.BTN_CANCEL, fg_color="#555", hover_color="#333", width=90, command=lambda: set_res("cancel")).pack(side="left", padx=10)
+
+    big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
+
+    ctk.CTkButton(btn_frame, text=messages.BTN_FAST, font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res("fast")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=messages.BTN_SLOW, font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res("slow")).pack(side="left", padx=10)
     
     app.wait_window(dialog)
     return result[0]
@@ -839,7 +850,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     
     # Ensure no other operation is running
     if not _operation_lock.acquire(blocking=False):
-        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, "An operation is already running. Please wait.", "warning"))
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
         
     try:
@@ -996,7 +1007,7 @@ def on_cancel_download_click():
 def on_convert_click():
     # Check if ANY operation is currently running using Events (Safe for UI thread)
     if _fetch_event.is_set() or _download_event.is_set() or _convert_event.is_set():
-        custom_msg_box(messages.TITLE_WARNING, "An operation is already running. Please wait.", "warning")
+        custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning")
         return
         
     save_path = path_entry.get()
@@ -1207,10 +1218,12 @@ def v2_exit_dialog(title, message, green_text, red_text):
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
-    btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
+    # Make the font slightly bigger to match the conversion popup
+    big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, command=lambda: set_res("stay")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, command=lambda: set_res("leave")).pack(side="left", padx=10)
+    # Apply the same exact size (width=110, height=30)
+    ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=big_btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, width=110, height=30, command=lambda: set_res("leave")).pack(side="left", padx=10)
     app.wait_window(dialog)
     return result[0]
 
@@ -1229,8 +1242,6 @@ app.protocol("WM_DELETE_WINDOW", on_closing)
 
 # 3. Welcome Onboarding Popup
 def show_welcome_onboarding():
-    import sys
-    import os
     
     # Check if a custom directory is set in config
     if config.USER_DATA_SAVE_DIR.strip():
