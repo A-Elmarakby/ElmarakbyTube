@@ -796,17 +796,18 @@ def ask_conversion_speed():
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text=messages.MSG_SPEED_PROMPT, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
+    # Apply Bidi to ensure Arabic text renders correctly
+    lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_SPEED_PROMPT), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
     lbl.pack(pady=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
 
-    ctk.CTkButton(btn_frame, text=messages.BTN_FAST, font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res("fast")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=messages.BTN_SLOW, font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res("slow")).pack(side="left", padx=10)
+    # Use apply_bidi for the Arabic button texts
+    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_FAST), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res("fast")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_SLOW), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res("slow")).pack(side="left", padx=10)
     
     app.wait_window(dialog)
     return result[0]
@@ -1020,13 +1021,6 @@ def on_convert_click():
         custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_CONV, "warning")
         return
 
-    # Check for incomplete (.part) files to warn the user
-    for r in selected_rows:
-        sanitized = sanitize_filename(r['title'])
-        part_file_pattern = os.path.join(save_path, f"{sanitized}*.part")
-        if glob.glob(part_file_pattern):
-            custom_msg_box(messages.TITLE_WARNING, f"'{r['title']}' is not fully downloaded. Please download it again first.", "warning")
-            return
         
     quality = quality_combo.get()
     if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
