@@ -7,7 +7,7 @@ import sys
 import os
 import glob
 import subprocess
-from tkinter import filedialog
+from tkinter import dialog, filedialog
 import imageio_ffmpeg
 import concurrent.futures
 
@@ -41,6 +41,7 @@ current_ffmpeg_process = None
 
 # --- Threading State Management (Signals and Smart Locks) ---
 _operation_lock = threading.Lock()  # Lock to prevent overlapping operations
+_ui_list_lock = threading.Lock()  # protects the video list from conflicts
 _fetch_event = threading.Event()    # Signal for fetching sizes
 _download_event = threading.Event() # Signal for downloading
 _convert_event = threading.Event()  # Signal for conversion
@@ -221,6 +222,18 @@ global_warning_label.pack(side="left")
 
 # ==================== UI Safety Helpers ====================
 # Safe ways to update text and progress bars without crashing the app
+def apply_bidi(text):
+    """Force Right-to-Left layout for normal text, labels, and buttons using Unicode."""
+    text = str(text)
+    if any('\u0600' <= c <= '\u06FF' for c in text):
+        # Split by newlines to handle multi-line popups safely
+        lines = text.split('\n')
+        # Wrap EACH line strictly: [RLE][RLM] text [RLM][PDF]
+        # This absolutely prevents punctuation (!, .) and English words from escaping to the wrong side.
+        return '\n'.join(['\u202B\u200F' + line + '\u200F\u202C' for line in lines])
+    return text
+
+
 def safe_ui_update(widget, **kwargs):
     if widget and widget.winfo_exists():
         widget.configure(**kwargs)
@@ -240,25 +253,23 @@ def center_toplevel(top, width, height):
 # Our custom message box builder
 def custom_msg_box(title, message, msg_type="error"):
     dialog = ctk.CTkToplevel(app)
-    dialog.title(title)
+    dialog.title(apply_bidi(title)) # FIXED: Applied Bidi to OS Window Title
     center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
     dialog.transient(app)
     dialog.grab_set()
     
     def apply_icon():
-        try:
-            dialog.iconbitmap(config.ICON_FILE)
-        except:
-            pass
+        try: dialog.iconbitmap(config.ICON_FILE)
+        except: pass
     dialog.after(200, apply_icon)
     
     config.play_sound(msg_type)
     
     color = config.COLOR_RED 
-    icon = "🛑"
+    icon = " 🛑 "
     if msg_type == "warning":
         color = "#FFCC00" 
-        icon = "⚠️"
+        icon = "⚠️ "
     elif msg_type == "success":
         color = "#28a745"
         icon = "✅"
@@ -266,13 +277,22 @@ def custom_msg_box(title, message, msg_type="error"):
         color = config.COLOR_CYAN
         icon = "ℹ️"
         
-    lbl_title = ctk.CTkLabel(dialog, text=f"{icon} {title}", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color)
-    lbl_title.pack(pady=(20, 5))
+    # Architectural Solution: Frame Separation to perfectly align Emojis and Punctuation
+    title_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    title_frame.pack(pady=(20, 5))
     
-    lbl_msg = ctk.CTkLabel(dialog, text=message, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400)
+    is_arabic = any('\u0600' <= c <= '\u06FF' for c in str(title))
+    if is_arabic:
+        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="right")
+        ctk.CTkLabel(title_frame, text=apply_bidi(title), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="right")
+    else:
+        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="left")
+        ctk.CTkLabel(title_frame, text=title, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="left")
+    
+    lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400, justify="center")
     lbl_msg.pack(pady=(0, 20), padx=20)
     
-    ctk.CTkButton(dialog, text=messages.BTN_OK, fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
+    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
     app.wait_window(dialog)
 
 # Change raw bytes into readable text like MB or GB
@@ -286,8 +306,9 @@ def format_size(bytes_size):
 
 # Change the text at the bottom bar
 def update_global_status(msg, color="white", warning_msg=""):
-    global_status_label.configure(text=f"Status: {msg}", text_color=color)
-    global_warning_label.configure(text=warning_msg)
+    # Apply bidi in case status messages are translated to Arabic
+    global_status_label.configure(text=apply_bidi(f"Status: {msg}"), text_color=color)
+    global_warning_label.configure(text=apply_bidi(warning_msg))
 
 # Calculate the total time and size of selected videos
 def update_dynamic_totals():
@@ -335,12 +356,11 @@ def toggle_all(state):
 # Delete selected videos from the list
 def remove_selected():
     global video_rows
-    for row_data in reversed(video_rows):
-        if row_data["checkbox"].get() == 1:
-            row_data["frame"].destroy()
-            video_rows.remove(row_data)
-            
-    total_time_label.configure(text="0s")
+    with _ui_list_lock:
+        for row_data in reversed(video_rows):
+             if row_data["checkbox"].get() == 1:
+                row_data["frame"].destroy()
+                video_rows.remove(row_data)
     update_dynamic_totals()
     try: app.after(10, lambda: list_frame._parent_canvas.yview_moveto(0.0))
     except: pass
@@ -500,7 +520,8 @@ def fetch_all_sizes_worker():
             app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
             return
             
-        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+        with _ui_list_lock:
+            selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
         if not selected_rows:
             app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_FETCH, "warning"))
             return
@@ -615,15 +636,13 @@ def fetch_video_data():
 def on_search_click():
     threading.Thread(target=fetch_video_data, daemon=True).start()
 
-# Load the search icon image safely
-search_icon = ctk.CTkImage(
-    light_image=Image.open(config.SEARCH_ICON_PATH),
-    dark_image=Image.open(config.SEARCH_ICON_PATH),
-    size=config.SEARCH_ICON_SIZE
-)
-
-# Create the search button using the image instead of text
-ctk.CTkButton(url_input_layout, text="", image=search_icon, width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
+# Load the search icon image safely with fallback
+try:
+    search_icon = ctk.CTkImage(light_image=Image.open(config.SEARCH_ICON_PATH), dark_image=Image.open(config.SEARCH_ICON_PATH), size=config.SEARCH_ICON_SIZE)
+    ctk.CTkButton(url_input_layout, text="", image=search_icon, width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
+except Exception:
+    # Fallback to emoji if image is missing
+    ctk.CTkButton(url_input_layout, text="🔍", width=40, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_search_click).pack(side="left")
 
 # Check if a video is already on the computer
 def find_downloaded_file(save_path, title):
@@ -683,8 +702,8 @@ def _download_process(rows_to_download, quality, save_path):
                 downloaded = d.get('downloaded_bytes', 0)
                 if total > 0:
                     percent = downloaded / total
-                    app.after(0, lambda: safe_progress_update(r['progress'], percent))
-                    app.after(0, lambda: safe_ui_update(r['percent_label'], text=f"{int(percent*100)}%"))
+                    app.after(0, lambda p=percent: safe_progress_update(r['progress'], p))
+                    app.after(0, lambda p=percent: safe_ui_update(r['percent_label'], text=f"{int(p*100)}%"))
                     if r['bytes_size'] == -1: 
                         size_str = format_size(total)
                         app.after(0, lambda: safe_ui_update(r['size_label'], text=size_str))
@@ -746,7 +765,8 @@ def download_worker():
             app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error"))
             return
 
-        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+        with _ui_list_lock:
+            selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
         if not selected_rows:
             app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_DL, "warning"))
             return
@@ -796,51 +816,56 @@ def ask_conversion_speed():
         result[0] = val
         dialog.destroy()
         
-    # Apply Bidi to ensure Arabic text renders correctly
+# Apply Bidi to ensure Arabic text renders correctly
     lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_SPEED_PROMPT), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
     lbl.pack(pady=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
+    # Define the bigger font
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
 
-    # Use apply_bidi for the Arabic button texts
+    # Use apply_bidi for the Arabic button texts and match the size
     ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_FAST), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res("fast")).pack(side="left", padx=10)
     ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_SLOW), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res("slow")).pack(side="left", padx=10)
     
     app.wait_window(dialog)
     return result[0]
-
 # Ask user a Yes or No question
-def custom_ask_yes_no(title, message, icon="⚠️"):
+def custom_ask_yes_no(title, message, icon="⚠️ "):
     dialog = ctk.CTkToplevel(app)
-    dialog.title(title)
+    dialog.title(apply_bidi(title)) # FIXED: Applied Bidi to Title
     center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
     dialog.transient(app)
     dialog.grab_set()
     
-    def apply_icon():
-        try:
-            dialog.iconbitmap(config.ICON_FILE)
-        except:
-            pass
-    dialog.after(200, apply_icon)
-    
+    add_dialog_icon(dialog)
     config.play_sound("warning")
     result = [False]
     def set_res(val):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text=f"{icon} {message}", font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400)
-    lbl.pack(pady=20, padx=20)
+    # Architectural Solution: Frame Separation to perfectly align Emojis and Punctuation
+    msg_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    msg_frame.pack(pady=20, padx=20)
+    
+    is_arabic = any('\u0600' <= c <= '\u06FF' for c in str(message))
+    if is_arabic:
+        ctk.CTkLabel(msg_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold")).pack(side="right")
+        ctk.CTkLabel(msg_frame, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=350, justify="right").pack(side="right")
+    else:
+        ctk.CTkLabel(msg_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold")).pack(side="left")
+        ctk.CTkLabel(msg_frame, text=message, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=350, justify="left").pack(side="left")
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-    ctk.CTkButton(btn_frame, text=messages.BTN_YES, fg_color="#28a745", hover_color="#218838", width=90, command=lambda: set_res(True)).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=messages.BTN_NO, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=90, command=lambda: set_res(False)).pack(side="left", padx=10)
+    big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
+
+    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True)).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_NO), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res(False)).pack(side="left", padx=10)
     
     app.wait_window(dialog)
     return result[0]
@@ -997,12 +1022,13 @@ def on_cancel_download_click():
     if _download_event.is_set():
         _download_event.clear() # Signal to stop downloading
         update_global_status("Canceling download... please wait.", "orange", "")
-        for r in video_rows:
-            if r.get('dl_state') in ['preparing', 'downloading']:
-                r['dl_state'] = 'canceled'
-                safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED)
-                safe_progress_update(r['progress'], 0)
-                safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
+        with _ui_list_lock: # Added lock protection
+            for r in video_rows:
+                if r.get('dl_state') in ['preparing', 'downloading']:
+                    r['dl_state'] = 'canceled'
+                    safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED)
+                    safe_progress_update(r['progress'], 0)
+                    safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
 # Start conversion
 # Start conversion
 def on_convert_click():
@@ -1016,7 +1042,8 @@ def on_convert_click():
         custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error")
         return
 
-    selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    with _ui_list_lock:
+        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
         custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_CONV, "warning")
         return
@@ -1040,7 +1067,7 @@ def on_convert_click():
             
     do_download_first = False
     if needs_download:
-        dl_choice = custom_ask_yes_no(messages.TITLE_WARNING, messages.MSG_DL_REQUIRED, icon="⚠️")
+        dl_choice = custom_ask_yes_no(messages.TITLE_WARNING, messages.MSG_DL_REQUIRED, icon="⚠️ ")
         if not dl_choice:
             update_global_status("Conversion canceled by user.", "orange", "")
             return
@@ -1052,9 +1079,12 @@ def on_convert_click():
 def on_stop_convert_click():
     global current_ffmpeg_process
     _convert_event.clear() # Signal to stop conversion
-    if current_ffmpeg_process:
-        try: current_ffmpeg_process.terminate()
-        except: pass
+    try:
+        proc = current_ffmpeg_process
+        if proc is not None:
+            proc.terminate()
+    except Exception:
+        pass
     update_global_status("Stopping conversion... please wait.", "orange", "")
 
 # Draw the bottom buttons
@@ -1071,13 +1101,6 @@ stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", widt
 
 # ==================== V2 Features: Contact, Onboarding, Exit ====================
 
-def apply_bidi(text):
-    """Force Right-to-Left layout for normal text, labels, and buttons using Unicode."""
-    text = str(text)
-    if any('\u0600' <= c <= '\u06FF' for c in text):
-        text = text.replace('،', '\u200F،\u200F').replace('؟', '\u200F؟\u200F').replace('!', '\u200F!\u200F')
-        return '\u202B' + text + '\u202C'
-    return text
 
 def add_dialog_icon(dialog):
     """Safely apply the app icon to any popup dialog."""
@@ -1157,15 +1180,14 @@ def show_contact_popup():
     ctk.CTkButton(btn_frame, text="Email", font=btn_font, fg_color=config.SOCIAL_EMAIL_COLOR, hover=True, hover_color=config.SOCIAL_EMAIL_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
 #############################
 # Add Contact Button inside the existing status_bar at the bottom right
-# Load the colored icon
-contact_icon = ctk.CTkImage(
-    light_image=Image.open(config.CONTACT_ICON_PATH),
-    dark_image=Image.open(config.CONTACT_ICON_PATH),
-    size=config.CONTACT_ICON_SIZE
-)
+# Load the colored icon safely
+try:
+    contact_icon = ctk.CTkImage(light_image=Image.open(config.CONTACT_ICON_PATH), dark_image=Image.open(config.CONTACT_ICON_PATH), size=config.CONTACT_ICON_SIZE)
+except Exception:
+    contact_icon = None # Will just show text if image is missing
 
-# 1. Create the button (Text only)
-contact_btn = ctk.CTkButton(status_bar, text=messages.BTN_CONTACT_US, font=("Segoe UI", 12, "bold"), fg_color=config.CONTACT_COLOR_1, hover_color=config.CONTACT_HOVER_1, width=config.CONTACT_BTN_WIDTH, height=config.CONTACT_BTN_HEIGHT, corner_radius=config.CONTACT_CORNER_RADIUS, command=show_contact_popup)
+# 1. Create the button (Text only) wrapped with apply_bidi
+contact_btn = ctk.CTkButton(status_bar, text=apply_bidi(messages.BTN_CONTACT_US), font=("Segoe UI", 12, "bold"), fg_color=config.CONTACT_COLOR_1, hover_color=config.CONTACT_HOVER_1, width=config.CONTACT_BTN_WIDTH, height=config.CONTACT_BTN_HEIGHT, corner_radius=config.CONTACT_CORNER_RADIUS, command=show_contact_popup)
 # Pack button first (goes to far right)
 contact_btn.pack(side="right", padx=(5, 25), pady=2) 
 
@@ -1195,7 +1217,7 @@ animate_contact_btn(1)
 # 2. Smart Exit Confirmation
 def v2_exit_dialog(title, message, green_text, red_text):
     dialog = ctk.CTkToplevel(app)
-    dialog.title(title)
+    dialog.title(apply_bidi(title)) # FIXED: Applied Bidi to Title
     center_toplevel(dialog, 450, 200)
     dialog.transient(app)
     dialog.grab_set()
@@ -1207,15 +1229,13 @@ def v2_exit_dialog(title, message, green_text, red_text):
         result[0] = val
         dialog.destroy()
         
-    lbl = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400)
+    lbl = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=400, justify="center")
     lbl.pack(pady=30, padx=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
-    # Make the font slightly bigger to match the conversion popup
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    # Apply the same exact size (width=110, height=30)
     ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay")).pack(side="left", padx=10)
     ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=big_btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, width=110, height=30, command=lambda: set_res("leave")).pack(side="left", padx=10)
     app.wait_window(dialog)
@@ -1308,6 +1328,8 @@ def show_welcome_onboarding():
             greet_dialog = ctk.CTkToplevel(app)
             greet_dialog.title(messages.TITLE_WELCOME)
             center_toplevel(greet_dialog, 500, 200)
+            greet_dialog.transient(app) # Keep on top
+            greet_dialog.grab_set()     # Lock main window
             add_dialog_icon(greet_dialog)
             config.play_sound("success")
 

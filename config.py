@@ -1,14 +1,18 @@
-import winsound
+import os
 
-# ==================== App Settings ====================
+# ==========================================
+# GENERAL APP SETTINGS
+# ==========================================
 APP_TITLE = "ElmarakbyTube Downloader"
 ICON_FILE = "icon.ico"
 
-# ==================== Popup Dimensions ====================
+# Default popup dimensions (width, height)
 POPUP_WIDTH = 450
 POPUP_HEIGHT = 200
 
-# ==================== Brand Colors ====================
+# ==========================================
+# BRAND COLORS (UI Theme)
+# ==========================================
 COLOR_CYAN = "#007BA7"        
 COLOR_CYAN_HOVER = "#005F83"
 COLOR_MAGENTA = "#B20059"     
@@ -18,139 +22,119 @@ COLOR_RED_HOVER = "#9A0007"
 COLOR_GREEN = "#398F3E"
 COLOR_GREEN_HOVER = "#183B19"
 
-# ==================== Performance & Engine Settings ====================
-
-# Maximum number of videos to fetch size for at the same time (Higher = faster, but uses more CPU/Network)
+# ==========================================
+# PERFORMANCE & ENGINE SETTINGS
+# ==========================================
+# Max videos to fetch sizes for at the same time (Higher = faster, but heavy on network)
 MAX_THREADS = 5
 
-# Stop fetching sizes if this number of errors happens in a row (Prevents YouTube from blocking your IP)
+# Stop fetching sizes if this number of errors happens in a row (Anti-ban protection)
 MAX_CONSECUTIVE_ERRORS = 10
 
-# Number of videos to draw on the screen at once (Prevents the app from freezing when loading large playlists)
+# Draw videos on screen in groups to prevent app freezing
 RENDER_CHUNK_SIZE = 15
 
-# Default audio quality for MP3 downloads (Options: "128", "192", "320")
+# Default audio quality for MP3 conversions ("128", "192", "320")
 AUDIO_BITRATE = "192"
 
-import os
+# Show yt-dlp logs in the black terminal screen for debugging (True = Yes, False = No)
+SHOW_TERMINAL_LOGS = True
 
-# ==================== System Sounds ====================
-# 1. Play a sound when a task finishes successfully? (True = Yes, False = No)
+# ==========================================
+# APP DATA STORAGE
+# ==========================================
+# The name of the file where user data (like name) is saved
+USER_DATA_FILE_NAME = "user_data.json"
+
+# The folder path to save the data file. 
+# Leave it empty "" to save it safely inside Windows AppData.
+USER_DATA_SAVE_DIR = ""
+
+# ==========================================
+# SYSTEM SOUNDS & ALERTS
+# ==========================================
+# Play a sound when a task finishes successfully? (True = Yes, False = No)
 PLAY_SUCCESS_SOUND = True
 
-# 2. Source of the success sound ("windows" or "custom")
+# Type of sound to play on success ("success", "info", "warning", "error")
+SUCCESS_SOUND_TYPE = "success"
+
+# Source of the success sound ("windows" or "custom")
 SUCCESS_SOUND_SOURCE = "windows"
 
-# 3. If source is "custom", type the path to your .wav file (e.g., "success.wav")
+# If source is "custom", type the path to your .wav file (e.g., "sounds/success.wav")
 CUSTOM_SUCCESS_SOUND_PATH = "success.wav"
 
 def play_sound(sound_type="info"):
-    """Plays system or custom sounds based on event type"""
+    """Plays system or custom sounds based on event type safely cross-platform"""
+    import sys
+    if sys.platform != "win32":
+        return # Skip sound on Mac/Linux to prevent crashes
+
+    import winsound # Import here safely
     if sound_type == "success":
         if not PLAY_SUCCESS_SOUND:
-            return # Stop if sound is disabled
-        
+            return 
         if SUCCESS_SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_SUCCESS_SOUND_PATH):
-            # Play the custom .wav file
             winsound.PlaySound(CUSTOM_SUCCESS_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
-            # Play default Windows success sound
             winsound.MessageBeep(winsound.MB_ICONASTERISK)
-            
     elif sound_type == "error":
         winsound.MessageBeep(winsound.MB_ICONHAND)
     elif sound_type == "warning":
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     else:
         winsound.MessageBeep(winsound.MB_ICONASTERISK)
+# ==========================================
+# UI COMPONENTS SETTINGS (V2 Updates)
+# ==========================================
 
-# Choose whether the app should play a sound when a task finishes successfully (True = Yes, False = No)
-PLAY_SUCCESS_SOUND = True
-# Type of sound to play on success (Options: "success", "info", "warning", "error")
-SUCCESS_SOUND_TYPE = "success"
+# --- 1. Search Button ---
+SEARCH_ICON_PATH = "search_icon.png" 
+SEARCH_ICON_SIZE = (15, 15)
 
-# --- App Data Files ---
-# The name of the file where user data (like their name) is saved
-USER_DATA_FILE_NAME = "user_data.json"
-
-# Show errors in the black terminal screen for debugging (True = Yes, False = No)
-SHOW_TERMINAL_LOGS = True
-
-# ==================== Contact Button Settings ====================
-# Time in milliseconds between each pulse animation for the Contact button (10000 = 10 seconds)
-CONTACT_PULSE_INTERVAL = 10000
-
-
-# ==================== V2 UI & Validation Settings ====================
-
-# --- Contact Us Button Configuration ---
+# --- 2. Contact Us Button (Status Bar) ---
 CONTACT_BTN_WIDTH = 90
 CONTACT_BTN_HEIGHT = 28
 CONTACT_CORNER_RADIUS = 14
 
-# Icon settings
-CONTACT_ICON_PATH = "chat_icon.png" # Path to your colored PNG file
-CONTACT_ICON_SIZE = (22, 22)        # Width and Height of the icon
+CONTACT_ICON_PATH = "chat_icon.png" 
+CONTACT_ICON_SIZE = (22, 22)        
 
 # Pulse animation timing (in milliseconds)
 CONTACT_DURATION_COLOR_1 = 1000  
 CONTACT_DURATION_COLOR_2 = 1000  
 
-# Background colors
 CONTACT_COLOR_1 = COLOR_MAGENTA
 CONTACT_HOVER_1 = COLOR_CYAN_HOVER
 CONTACT_COLOR_2 = "#96034C"
 CONTACT_HOVER_2 = COLOR_CYAN_HOVER
 
-
-
-# --- Social Media Buttons (Contact Popup) ---
+# --- 3. Social Media Buttons (Contact Popup) ---
 SOCIAL_BTN_WIDTH = 120
 SOCIAL_LINKEDIN_COLOR = "#0077b5"
 SOCIAL_LINKEDIN_HOVER = "#005582"
-
 SOCIAL_WHATSAPP_COLOR = COLOR_MAGENTA
 SOCIAL_WHATSAPP_HOVER = COLOR_MAGENTA_HOVER
-
 SOCIAL_GITHUB_COLOR = COLOR_MAGENTA
 SOCIAL_GITHUB_HOVER = COLOR_MAGENTA_HOVER
-
 SOCIAL_EMAIL_COLOR = COLOR_CYAN
 SOCIAL_EMAIL_HOVER = COLOR_CYAN_HOVER
 
-# --- Exit Confirmation Buttons ---
+# --- 4. Exit Confirmation Buttons ---
 EXIT_STAY_COLOR = COLOR_GREEN
 EXIT_STAY_HOVER = COLOR_GREEN_HOVER
-
 EXIT_LEAVE_COLOR = COLOR_RED
 EXIT_LEAVE_HOVER = COLOR_RED_HOVER
 
-# --- Name Validation Rules (Welcome Popup) ---
-# 1. Allow Numbers? (True = Yes, False = No)
+# --- 5. Name Validation Rules (Welcome Popup) ---
 NAME_ALLOW_NUMBERS = False
-# 2. Allow Symbols? (e.g., @, #, $, _) (True = Yes, False = No)
 NAME_ALLOW_SYMBOLS = False
-# 3. Minimum length of the name
 NAME_MIN_LENGTH = 2
-# 4. Maximum length of the name
 NAME_MAX_LENGTH = 30
-# 5. Maximum times a single letter can be repeated (e.g., 2 means 'aa' is ok, 'aaa' is rejected)
 NAME_MAX_REPEATS = 2
 
-
-# --- Welcome Dialog OK Button ---
+# --- 6. Welcome Dialog OK Button ---
 WELCOME_BTN_WIDTH = 100
 WELCOME_BTN_COLOR = COLOR_MAGENTA
 WELCOME_BTN_HOVER = COLOR_MAGENTA_HOVER
-
-# ==================== App Data Settings ====================
-# The name of the file where user data (like name) is saved
-USER_DATA_FILE_NAME = "user_data.json"
-
-# The folder path to save the data file. 
-# Leave it empty "" to save it in the same folder as the app.
-USER_DATA_SAVE_DIR = ""
-
-# ==================== Search Button Settings ====================
-SEARCH_ICON_PATH = "search_icon.png" # Path to your search icon image
-SEARCH_ICON_SIZE = (15, 15)
