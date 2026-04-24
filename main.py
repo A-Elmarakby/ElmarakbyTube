@@ -854,9 +854,9 @@ def ask_conversion_speed():
     app.wait_window(dialog)
     return result[0]
 # Ask user a Yes or No question
-def custom_ask_yes_no(title, message, icon="⚠️ "):
+def custom_ask_yes_no(title, message, icon="⚠️"):
     dialog = ctk.CTkToplevel(app)
-    dialog.title(apply_bidi(title)) # FIXED: Applied Bidi to Title
+    dialog.title(apply_bidi(title))
     center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
     dialog.transient(app)
     dialog.grab_set()
@@ -868,17 +868,25 @@ def custom_ask_yes_no(title, message, icon="⚠️ "):
         result[0] = val
         dialog.destroy()
         
-    # Architectural Solution: Frame Separation to perfectly align Emojis and Punctuation
-    msg_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-    msg_frame.pack(pady=20, padx=20)
+    # --- Architectural Solution: Header Frame (Icon + Title) ---
+    # This separates the icon from the multi-line message to prevent layout breaking
+    title_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    title_frame.pack(pady=(20, 5))
     
-    is_arabic = any('\u0600' <= c <= '\u06FF' for c in str(message))
-    if is_arabic:
-        ctk.CTkLabel(msg_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold")).pack(side="right")
-        ctk.CTkLabel(msg_frame, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=350, justify="right").pack(side="right")
+    warning_color = "#FFCC00" # Yellow color for warnings
+    is_arabic_title = any('\u0600' <= c <= '\u06FF' for c in str(title))
+    
+    if is_arabic_title:
+        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="right")
+        ctk.CTkLabel(title_frame, text=apply_bidi(title), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="right")
     else:
-        ctk.CTkLabel(msg_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold")).pack(side="left")
-        ctk.CTkLabel(msg_frame, text=message, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=350, justify="left").pack(side="left")
+        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="left")
+        ctk.CTkLabel(title_frame, text=title, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="left")
+
+    # --- Clean, Centered Body Message ---
+    # justify="center" ensures that multi-line Arabic text stays balanced
+    lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=380, justify="center")
+    lbl_msg.pack(pady=(5, 20), padx=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
