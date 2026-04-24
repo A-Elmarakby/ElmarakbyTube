@@ -18,8 +18,8 @@ FONT_SIZE_POPUP_BODY = 15
 BTN_OK = "تمام"
 BTN_YES = "آه طبعًا"
 BTN_NO = "لا شكرًا" 
-BTN_FAST = "سريع 🚀"
-BTN_SLOW = "بطيء 🐢"
+BTN_FAST = "في السريع"
+BTN_SLOW = "على الهادي"
 BTN_CANCEL = "إلغي الحوار ده"
 
 # ------------------------------------------

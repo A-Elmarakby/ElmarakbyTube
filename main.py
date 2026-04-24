@@ -798,17 +798,12 @@ def download_worker():
 # Ask user if they want fast or slow conversion
 def ask_conversion_speed():
     dialog = ctk.CTkToplevel(app)
-    dialog.title(messages.TITLE_SPEED)
-    center_toplevel(dialog, 350, 150)
+    dialog.title(apply_bidi(messages.TITLE_SPEED))
+    center_toplevel(dialog, 450, 160)
     dialog.transient(app) 
     dialog.grab_set() 
     
-    def apply_icon():
-        try:
-            dialog.iconbitmap(config.ICON_FILE)
-        except:
-            pass
-    dialog.after(200, apply_icon)
+    add_dialog_icon(dialog)
     
     config.play_sound("info")
     result = ["cancel"] 
@@ -816,19 +811,45 @@ def ask_conversion_speed():
         result[0] = val
         dialog.destroy()
         
-# Apply Bidi to ensure Arabic text renders correctly
     lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_SPEED_PROMPT), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"))
     lbl.pack(pady=20)
     
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack()
     
-    # Define the bigger font
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
 
-    # Use apply_bidi for the Arabic button texts and match the size
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_FAST), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res("fast")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_SLOW), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res("slow")).pack(side="left", padx=10)
+    # Base settings for buttons (without image or spacing)
+    fast_btn_kwargs = {
+        "font": big_btn_font, "fg_color": "#28a745", "hover_color": "#218838",
+        "width": 120, "height": 35, "command": lambda: set_res("fast")
+    }
+    
+    slow_btn_kwargs = {
+        "font": big_btn_font, "fg_color": config.COLOR_RED, "hover_color": config.COLOR_RED_HOVER,
+        "width": 120, "height": 35, "command": lambda: set_res("slow")
+    }
+    
+    # --- Smart Icon Loading (Safe Dictionary Unpacking) ---
+    try:
+        fast_img = ctk.CTkImage(light_image=Image.open(config.SPEED_FAST_ICON_PATH), dark_image=Image.open(config.SPEED_FAST_ICON_PATH), size=config.SPEED_ICON_SIZE)
+        fast_btn_kwargs["image"] = fast_img
+        # Adding spaces here creates a clean visual gap between the image and the text
+        fast_btn_kwargs["text"] = apply_bidi(f"  {messages.BTN_FAST}")
+    except Exception:
+        # Fallback: Text + Emoji (putting emoji at the end makes it left in RTL)
+        fast_btn_kwargs["text"] = apply_bidi(f"{messages.BTN_FAST} {config.SPEED_FAST_FALLBACK_EMOJI}")
+        
+    try:
+        slow_img = ctk.CTkImage(light_image=Image.open(config.SPEED_SLOW_ICON_PATH), dark_image=Image.open(config.SPEED_SLOW_ICON_PATH), size=config.SPEED_ICON_SIZE)
+        slow_btn_kwargs["image"] = slow_img
+        slow_btn_kwargs["text"] = apply_bidi(f"  {messages.BTN_SLOW}")
+    except Exception:
+        slow_btn_kwargs["text"] = apply_bidi(f"{messages.BTN_SLOW} {config.SPEED_SLOW_FALLBACK_EMOJI}")
+
+    # Safely unpack the kwargs and draw the buttons
+    ctk.CTkButton(btn_frame, **fast_btn_kwargs).pack(side="left", padx=15)
+    ctk.CTkButton(btn_frame, **slow_btn_kwargs).pack(side="left", padx=15)
     
     app.wait_window(dialog)
     return result[0]
