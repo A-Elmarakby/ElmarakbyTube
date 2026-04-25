@@ -46,9 +46,9 @@ _fetch_event = threading.Event()    # Signal for fetching sizes
 _download_event = threading.Event() # Signal for downloading
 _convert_event = threading.Event()  # Signal for conversion
 
-# Variables for the buttons so we can hide/show them later
+# Variables for the dynamic buttons
+download_btn = None
 convert_btn = None
-stop_convert_btn = None
 
 # --- Custom Logger ---
 # This controls if we see yt-dlp text in the terminal or not based on config
@@ -97,36 +97,37 @@ url_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
 # Function to make keyboard shortcuts (Copy, Paste, Select All) work
 # Global Keyboard Shortcuts Handler (Works for ALL input fields regardless of keyboard language)
+# Global Keyboard Shortcuts Handler (Works safely for English and Arabic)
 def global_hardware_shortcuts(event):
-    # Make sure the Ctrl key is pressed (code 4 means Ctrl in Windows)
     has_ctrl = (event.state & 4) != 0
     has_shift = (event.state & 1) != 0
 
     if has_ctrl:
-        if event.keycode == 65: # A (Select All)
+        keysym = event.keysym.lower()
+        
+        # FIXED: Only manually inject the shortcut if Tkinter's native English shortcut fails (i.e., user is typing in Arabic)
+        if event.keycode == 65 and keysym != 'a': # Select All
             try:
                 event.widget.select_range(0, 'end')
                 event.widget.icursor('end')
             except: pass
             return "break"
-        elif event.keycode == 67: # C (Copy)
+        elif event.keycode == 67 and keysym != 'c': # Copy
             try: event.widget.event_generate("<<Copy>>")
             except: pass
             return "break"
-        elif event.keycode == 86: # V (Paste)
+        elif event.keycode == 86 and keysym != 'v': # Paste (Fixes Double Paste Bug)
             try: event.widget.event_generate("<<Paste>>")
             except: pass
             return "break"
-        elif event.keycode == 88: # X (Cut)
+        elif event.keycode == 88 and keysym != 'x': # Cut
             try: event.widget.event_generate("<<Cut>>")
             except: pass
             return "break"
-        elif event.keycode == 90: # Z (Undo / Redo)
+        elif event.keycode == 90 and keysym != 'z': # Undo / Redo
             try:
-                if has_shift:
-                    event.widget.event_generate("<<Redo>>") # Ctrl + Shift + Z
-                else:
-                    event.widget.event_generate("<<Undo>>") # Ctrl + Z
+                if has_shift: event.widget.event_generate("<<Redo>>") 
+                else: event.widget.event_generate("<<Undo>>") 
             except: pass
             return "break"
 
@@ -251,10 +252,13 @@ def center_toplevel(top, width, height):
     top.geometry(f"{width}x{height}+{x}+{y}")
 
 # Our custom message box builder
-def custom_msg_box(title, message, msg_type="error"):
+def custom_msg_box(title, message, msg_type="error", custom_height=None):
     dialog = ctk.CTkToplevel(app)
-    dialog.title(apply_bidi(title)) # FIXED: Applied Bidi to OS Window Title
-    center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
+    dialog.title(apply_bidi(title)) 
+    
+    # Use custom height if provided, otherwise fallback to config
+    h = custom_height if custom_height else config.POPUP_HEIGHT
+    center_toplevel(dialog, config.POPUP_WIDTH, h)
     dialog.transient(app)
     dialog.grab_set()
     
@@ -459,7 +463,9 @@ def fetch_size_for_single_video(row_data, quality):
         'noplaylist': True, 
         'ignoreerrors': True,
         'logger': SilentLogger(),
-        'format': get_ydl_format_string(quality)
+        'format': get_ydl_format_string(quality),
+        'socket_timeout': config.SOCKET_TIMEOUT, # Use time from config
+        'retries': config.FETCH_RETRIES          # Use retries from config
     }
     
     try:
@@ -508,24 +514,25 @@ def fetch_size_for_single_video(row_data, quality):
 def fetch_all_sizes_worker():
     global consecutive_errors
     
-    # Ensure no other operation is running
+    # --- 1. VALIDATION FIRST (Before touching any locks) ---
+    quality = quality_combo.get()
+    if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
+        return
+        
+    with _ui_list_lock:
+        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    if not selected_rows:
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_FETCH, "warning"))
+        return
+
+    # --- 2. NOW ACQUIRE LOCK ---
     if not _operation_lock.acquire(blocking=False):
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
     try:
         _fetch_event.set() # Turn on the fetch signal
-        quality = quality_combo.get()
-        if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-            app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
-            return
-            
-        with _ui_list_lock:
-            selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
-        if not selected_rows:
-            app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_FETCH, "warning"))
-            return
-
         consecutive_errors = 0
         app.after(0, lambda: update_global_status(f"Fetching sizes for {quality}...", config.COLOR_CYAN, ""))
         
@@ -536,11 +543,13 @@ def fetch_all_sizes_worker():
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=config.MAX_THREADS) as executor:
             futures = [executor.submit(fetch_size_for_single_video, row, quality) for row in selected_rows]
-            concurrent.futures.wait(futures)
+            # Safety timeout: each video gets its share of time based on config
+            concurrent.futures.wait(futures, timeout=config.SOCKET_TIMEOUT * len(selected_rows))
         
         if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
             app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
-            app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error"))
+            # FIXED: Increased height specifically for this long Arabic message
+            app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error", custom_height=230))
         elif _fetch_event.is_set():
             blocked_count = sum(1 for r in selected_rows if r['bytes_size'] == 0)
             if blocked_count > 0:
@@ -726,9 +735,12 @@ def _download_process(rows_to_download, quality, save_path):
             'quiet': True,
             'no_warnings': True,
             'continuedl': True, 
-            'logger': DownloadLogger(row_data), # Pass the current row to the logger
-            'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe() 
+            'logger': DownloadLogger(row_data),
+            'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
+            'socket_timeout': config.SOCKET_TIMEOUT, # Use time from config
+            'retries': config.DOWNLOAD_RETRIES       # Use retries from config
         }
+
         if postprocessors:
             ydl_opts['postprocessors'] = postprocessors
 
@@ -752,29 +764,36 @@ def _download_process(rows_to_download, quality, save_path):
 
 # Start the download background task_v2
 def download_worker():
-    # Ensure no other operation is running at the same time
+    global download_btn
+    
+    # --- 1. VALIDATION FIRST (Fixes Button Jitter) ---
+    save_path = path_entry.get()
+    if not save_path or not os.path.isdir(save_path):
+        app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error"))
+        return
+
+    with _ui_list_lock:
+        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    if not selected_rows:
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_DL, "warning"))
+        return
+
+    quality = quality_combo.get()
+    if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
+        app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
+        return
+
+    # --- 2. NOW ACQUIRE LOCK & START UI CHANGES ---
     if not _operation_lock.acquire(blocking=False):
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
     try:
         _download_event.set() # Turn on download signal
-        save_path = path_entry.get()
         
-        if not save_path or not os.path.isdir(save_path):
-            app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error"))
-            return
-
-        with _ui_list_lock:
-            selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
-        if not selected_rows:
-            app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_DL, "warning"))
-            return
-
-        quality = quality_combo.get()
-        if quality in ["Select Quality", "Waiting for link...", "Loading..."]:
-            app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
-            return
+        # Change button to RED safely
+        if download_btn:
+            app.after(0, lambda: download_btn.configure(text="Cancel Download", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click))
 
         app.after(0, lambda: update_global_status(f"Starting download for {len(selected_rows)} videos...", config.COLOR_MAGENTA, ""))
 
@@ -794,7 +813,10 @@ def download_worker():
     finally:
         _download_event.clear() # Safely turn off the signal
         _operation_lock.release() # Release lock for other operations
-
+        
+        if download_btn:
+            # FIXED: Added state="normal" to wake the button up
+            app.after(0, lambda: download_btn.configure(text="Download Selected", state="normal", fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click))
 # Ask user if they want fast or slow conversion
 def ask_conversion_speed():
     dialog = ctk.CTkToplevel(app)
@@ -901,7 +923,7 @@ def custom_ask_yes_no(title, message, icon="⚠️"):
 
 # The main function to convert files to MP4 using FFmpeg
 def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_first):
-    global current_ffmpeg_process
+    global current_ffmpeg_process, convert_btn # <--- FIXED: Declared at the very top
     
     # Ensure no other operation is running
     if not _operation_lock.acquire(blocking=False):
@@ -911,19 +933,30 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     try:
         _convert_event.set() # Turn on conversion signal
         
-        # Hide Convert button and show Stop button
-        global convert_btn, stop_convert_btn
-        app.after(0, lambda: convert_btn.pack_forget())
-        app.after(0, lambda: stop_convert_btn.pack(side="left", padx=10))
+        if convert_btn:
+            app.after(0, lambda: convert_btn.configure(text="Stop Convert", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click))
+
+    
 
         # Download files first if needed
         if do_download_first:
             _download_event.set() # Turn on download signal internally
+            
+            # --- Sync Download Button State ---
+            global download_btn
+            if download_btn:
+                app.after(0, lambda: download_btn.configure(text="Cancel Download", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click))
+
             try:
                 app.after(0, lambda: update_global_status("Downloading missing files...", config.COLOR_MAGENTA, ""))
                 _download_process(selected_rows, quality, save_path)
             finally:
                 _download_event.clear() # Safely turn off download signal
+                
+                # --- Revert Download Button State ---
+                if download_btn:
+                    # FIXED: Added state="normal"
+                    app.after(0, lambda: download_btn.configure(text="Download Selected", state="normal", fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click))
             
             if not _convert_event.is_set(): 
                 app.after(0, lambda: update_global_status("Conversion canceled.", "orange", ""))
@@ -1029,10 +1062,9 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         _convert_event.clear() # Safely turn off the signal
         _operation_lock.release() # Release lock
         
-        # Show Convert button again securely
-        app.after(0, lambda: stop_convert_btn.pack_forget())
-        app.after(0, lambda: convert_btn.pack(side="left", padx=10))
-
+        if convert_btn:
+            # FIXED: Added state="normal" to wake the button up
+            app.after(0, lambda: convert_btn.configure(text="Convert to MP4", state="normal", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click))
 # ==================== Bottom Actions ====================
 # The main big buttons at the bottom of the app
 
@@ -1048,16 +1080,27 @@ def on_download_click():
 
 # Cancel download safely
 def on_cancel_download_click():
-    if _download_event.is_set():
-        _download_event.clear() # Signal to stop downloading
-        update_global_status("Canceling download... please wait.", "orange", "")
-        with _ui_list_lock: # Added lock protection
-            for r in video_rows:
-                if r.get('dl_state') in ['preparing', 'downloading']:
-                    r['dl_state'] = 'canceled'
-                    safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED)
-                    safe_progress_update(r['progress'], 0)
-                    safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
+    if not _download_event.is_set():
+        return
+
+    _download_event.clear() # Signal yt-dlp to stop
+    _convert_event.clear()  # Ensure conversion cancels too if they are synced
+    
+    # Instant UI Feedback to feel snappy
+    global download_btn
+    if download_btn:
+        download_btn.configure(text="Canceling...", state="disabled", fg_color="orange", hover_color="orange")
+        
+    update_global_status("Canceling download... please wait.", "orange", "")
+    
+    # FIXED: Removed _ui_list_lock to prevent Main-Thread Deadlock.
+    # Safe to iterate video_rows directly here.
+    for r in video_rows:
+        if r.get('dl_state') in ['preparing', 'downloading']:
+            r['dl_state'] = 'canceled'
+            safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED)
+            safe_progress_update(r['progress'], 0)
+            safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED)
 # Start conversion
 # Start conversion
 def on_convert_click():
@@ -1104,10 +1147,43 @@ def on_convert_click():
         
     threading.Thread(target=convert_worker, args=(speed_choice, selected_rows, save_path, quality, do_download_first), daemon=True).start()
 
-# Stop conversion
+_stop_convert_dialog_open = False # Guard variable
+
+# Stop conversion with Smart UX Logic
 def on_stop_convert_click():
-    global current_ffmpeg_process
-    _convert_event.clear() # Signal to stop conversion
+    global current_ffmpeg_process, convert_btn, _stop_convert_dialog_open 
+    
+    if _stop_convert_dialog_open:
+        return # Prevent double clicks
+        
+    # --- Smart Logic: Check if we are currently downloading ---
+    if _download_event.is_set():
+        _stop_convert_dialog_open = True
+        if convert_btn:
+            convert_btn.configure(state="disabled") # Disable button
+            
+        try:
+            choice = custom_ask_yes_no(messages.TITLE_CONFIRM, messages.MSG_KEEP_DL_CANCEL_CONV, icon="⚠️")
+        finally:
+            _stop_convert_dialog_open = False
+            if convert_btn:
+                convert_btn.configure(state="normal") # Re-enable
+                
+        if choice:
+            _convert_event.clear() # Cancel ONLY the conversion
+            if convert_btn: 
+                convert_btn.configure(text="Convert to MP4", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click)
+            update_global_status("Conversion canceled. Download will continue.", "orange", "")
+        return
+
+    # --- Normal Stop Conversion Logic (if FFmpeg is running) ---
+    _convert_event.clear() 
+    _download_event.clear() 
+    
+    # Instant UI Feedback
+    if convert_btn:
+        convert_btn.configure(text="Stopping...", state="disabled", fg_color="orange", hover_color="orange")
+        
     try:
         proc = current_ffmpeg_process
         if proc is not None:
@@ -1116,17 +1192,12 @@ def on_stop_convert_click():
         pass
     update_global_status("Stopping conversion... please wait.", "orange", "")
 
-# Draw the bottom buttons
-ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click).pack(side="left", padx=10)
-ctk.CTkButton(center_actions_frame, text="Cancel Download", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click).pack(side="left", padx=10)
+# Draw the dynamic bottom buttons (Only 2 buttons now)
+download_btn = ctk.CTkButton(center_actions_frame, text="Download Selected", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click)
+download_btn.pack(side="left", padx=10)
 
-convert_action_frame = ctk.CTkFrame(center_actions_frame, fg_color="transparent")
-convert_action_frame.pack(side="left")
-
-convert_btn = ctk.CTkButton(convert_action_frame, text="Convert to MP4", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click)
+convert_btn = ctk.CTkButton(center_actions_frame, text="Convert to MP4", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click)
 convert_btn.pack(side="left", padx=10)
-
-stop_convert_btn = ctk.CTkButton(convert_action_frame, text="Stop Convert", width=150, height=40, font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click)
 
 # ==================== V2 Features: Contact, Onboarding, Exit ====================
 
@@ -1270,15 +1341,34 @@ def v2_exit_dialog(title, message, green_text, red_text):
     app.wait_window(dialog)
     return result[0]
 
+def _force_kill_all_background_processes():
+    """Signals all worker events to stop, then forcefully kills any live FFmpeg subprocess."""
+    _download_event.clear()
+    _convert_event.clear()
+    _fetch_event.clear()
+
+    global current_ffmpeg_process
+    proc = current_ffmpeg_process
+    if proc is not None:
+        try:
+            proc.terminate() 
+            proc.wait(timeout=1) 
+        except:
+            try:
+                if proc: proc.kill()
+            except:
+                pass
+
 def on_closing():
     choice = v2_exit_dialog(messages.TITLE_EXIT, messages.MSG_EXIT_ASK, messages.BTN_STAY, messages.BTN_LEAVE)
     if choice == "leave":
-        # Check if any operation is currently active
         if _download_event.is_set() or _convert_event.is_set() or _fetch_event.is_set():
             warn_choice = v2_exit_dialog(messages.TITLE_EXIT_WARN, messages.MSG_EXIT_WARN, messages.BTN_WAIT, messages.BTN_FORCE_QUIT)
             if warn_choice == "leave":
+                _force_kill_all_background_processes() 
                 app.destroy()
         else:
+            _force_kill_all_background_processes() 
             app.destroy()
 
 app.protocol("WM_DELETE_WINDOW", on_closing)
@@ -1374,5 +1464,9 @@ def show_welcome_onboarding():
 
 app.after(500, show_welcome_onboarding)
 
-# Keep the window running
-app.mainloop()
+# # Keep the window running
+# app.mainloop()
+
+# Keep the window running only if this file is run directly
+if __name__ == "__main__":
+    app.mainloop()
