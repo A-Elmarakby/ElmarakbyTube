@@ -543,8 +543,18 @@ def fetch_all_sizes_worker():
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=config.MAX_THREADS) as executor:
             futures = [executor.submit(fetch_size_for_single_video, row, quality) for row in selected_rows]
-            # Safety timeout: each video gets its share of time based on config
-            concurrent.futures.wait(futures, timeout=config.SOCKET_TIMEOUT * len(selected_rows))
+            
+            # 1. Calculate how many "batches" of videos we have
+            # Example: 100 videos / 5 threads = 20 batches
+            batches = (len(selected_rows) + config.MAX_THREADS - 1) // config.MAX_THREADS
+            
+            # 2. Wait for them, but separate finished tasks (done) from stuck tasks (not_done)
+            done, not_done = concurrent.futures.wait(futures, timeout=config.SOCKET_TIMEOUT * batches)
+            
+            # 3. If the timeout finished but some threads are STILL running (Zombies)
+            if not_done:
+                # Force them to stop immediately on their next cycle
+                _fetch_event.clear()
         
         if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
             app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))

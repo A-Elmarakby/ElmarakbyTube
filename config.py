@@ -41,7 +41,7 @@ AUDIO_BITRATE = "192"
 SHOW_TERMINAL_LOGS = True
 
 # Network wait time (seconds) before giving up on a slow connection
-SOCKET_TIMEOUT = 45
+SOCKET_TIMEOUT = 30
 
 # Number of times to retry fetching video sizes if a network error occurs
 FETCH_RETRIES = 3

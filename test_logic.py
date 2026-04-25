@@ -1,84 +1,53 @@
-import unittest 
+import unittest
 from unittest.mock import patch, MagicMock
-import time
 import sys
 
-# Mock the environment to avoid launching GUI windows
+# Mock the UI to prevent windows from showing
 sys.modules['customtkinter'] = MagicMock()
 sys.modules['tkinter'] = MagicMock()
 sys.modules['imageio_ffmpeg'] = MagicMock()
 
 import main
 import config
-import concurrent.futures
 
-class TestFetchTimeoutLogic(unittest.TestCase):
-
+class TestFetchFinalFix(unittest.TestCase):
     def setUp(self):
-        main._fetch_event.clear()
-        main._operation_lock.release() if main._operation_lock.locked() else None
+        # Enable the run flag as if the app is actually running
+        main._fetch_event.set() 
+        if main._operation_lock.locked():
+            main._operation_lock.release()
         main.quality_combo = MagicMock()
         main.quality_combo.get.return_value = "720p"
 
     @patch('concurrent.futures.wait')
-    def test_01_timeout_math_flaw(self, mock_wait):
-        """Is the timeout calculation logically correct?"""
-        print("\n🔍 1. Testing timeout calculation...")
+    def test_batch_math_and_zombie_kill(self, mock_wait):
+        print("\n🔍 Testing batch math and killing zombie threads...")
         
-        # Imagine the user selected 100 videos
+        # Imagine the user selected 10 videos
         mock_row = {"checkbox": MagicMock(), "frame": MagicMock(), "bytes_size": -1}
         mock_row["checkbox"].get.return_value = 1
-        main.video_rows = [mock_row] * 100 # 100 videos
+        main.video_rows = [mock_row] * 10
         
-        # Set timeout to 45 seconds
+        # Settings: 5 threads, timeout 45 seconds
         config.SOCKET_TIMEOUT = 45
         config.MAX_THREADS = 5
         
+        # Simulate wait finished, but there are still zombie threads hanging
+        fake_done = []
+        fake_not_done = ['Zombie_Thread_1', 'Zombie_Thread_2']
+        mock_wait.return_value = (fake_done, fake_not_done)
+        
+        # Run the function
         main.fetch_all_sizes_worker()
         
-        # Get the calculated timeout from the code
+        # 1. Test math: (10 videos / 5 threads) = 2 batches. 2 * 45 = 90 seconds.
         kwargs = mock_wait.call_args.kwargs
-        calculated_timeout = kwargs.get('timeout')
+        self.assertEqual(kwargs.get('timeout'), 90, "Fail: math is still wrong!")
+        print("   [✅] Batch math is 100% correct (90 seconds for 10 videos instead of 450).")
         
-        print(f"   [!] Number of videos: 100")
-        print(f"   [!] Calculated timeout in current code: {calculated_timeout} seconds (about {calculated_timeout/60:.1f} minutes!)")
-        
-        # Correct math: 100 videos ÷ 5 threads = 20 batches. 20 × 45 = 900 seconds
-        correct_timeout = (100 / 5) * 45
-        print(f"   [✅] Expected correct timeout: {correct_timeout} seconds (about {correct_timeout/60:.1f} minutes)")
-        
-        self.assertNotEqual(calculated_timeout, correct_timeout, "Math in current code is wrong and causes double waiting time!")
-
-    def test_02_zombie_threads_after_timeout(self):
-        """Do threads actually stop after timeout?"""
-        print("\n🔍 2. Testing zombie threads after timeout...")
-        
-        # Mock one video
-        mock_row = {"checkbox": MagicMock(), "frame": MagicMock(), "bytes_size": -1, "size_label": MagicMock()}
-        mock_row["checkbox"].get.return_value = 1
-        main.video_rows = [mock_row]
-        
-        # Fake function that hangs for 3 seconds (simulate YouTube delay)
-        def hanging_fetch(*args):
-            print("   [⏳] Fetch thread started and will hang for 3 seconds...")
-            time.sleep(3)
-            print("   [💀] Zombie thread woke up! (this thread was not killed)")
-            return True
-
-        # Reduce timeout to 1 second to test behavior
-        config.SOCKET_TIMEOUT = 1 
-        config.MAX_THREADS = 1
-        
-        with patch('main.fetch_size_for_single_video', side_effect=hanging_fetch):
-            print("   [▶️] Running process with Timeout = 1 second")
-            main.fetch_all_sizes_worker()
-            print("   [🛑] UI is responsive again, fetch function finished.")
-            
-            # Wait 3 seconds to check if background thread is still alive
-            time.sleep(2.5)
-            
-        print("   [💡] Conclusion: UI returned, but thread kept running in background and used system resources!")
-        self.assertTrue(True) # Test depends on terminal output
+        # 2. Test kill: was the kill signal sent?
+        self.assertFalse(main._fetch_event.is_set(), "Fail: kill signal was not sent to hanging threads!")
+        print("   [✅] Kill signal sent successfully to hanging threads to free resources.")
 
 if __name__ == '__main__':
     unittest.main()
