@@ -4,7 +4,8 @@ import os
 # GENERAL APP SETTINGS
 # ==========================================
 APP_TITLE = "ElmarakbyTube Downloader"
-ICON_FILE = "icon.ico"
+# Path to the main application icon file
+ICON_FILE = "assets/icon.ico"
 
 # Default popup dimensions (width, height)
 POPUP_WIDTH = 450
@@ -99,7 +100,8 @@ def play_sound(sound_type="info"):
 # ==========================================
 
 # --- 1. Search Button ---
-SEARCH_ICON_PATH = "search_icon.png" 
+# Path to the icon used for the search button
+SEARCH_ICON_PATH = "assets/search_icon.png" 
 SEARCH_ICON_SIZE = (15, 15)
 
 # --- 2. Contact Us Button (Status Bar) ---
@@ -107,7 +109,8 @@ CONTACT_BTN_WIDTH = 90
 CONTACT_BTN_HEIGHT = 28
 CONTACT_CORNER_RADIUS = 14
 
-CONTACT_ICON_PATH = "chat_icon.png" 
+# Path to the chat icon for the contact button
+CONTACT_ICON_PATH = "assets/chat_icon.png" 
 CONTACT_ICON_SIZE = (22, 22)        
 
 # Pulse animation timing (in milliseconds)
@@ -149,8 +152,10 @@ WELCOME_BTN_COLOR = COLOR_MAGENTA
 WELCOME_BTN_HOVER = COLOR_MAGENTA_HOVER
 
 # --- 7. Conversion Speed Icons ---
-SPEED_FAST_ICON_PATH = "fast_icon.png"
-SPEED_SLOW_ICON_PATH = "slow_icon.png"
+# Path to the icon representing fast conversion speed
+SPEED_FAST_ICON_PATH = "assets/fast_icon.png"
+# Path to the icon representing slow conversion speed
+SPEED_SLOW_ICON_PATH = "assets/slow_icon.png"
 SPEED_ICON_SIZE = (22, 22)
 SPEED_FAST_FALLBACK_EMOJI = "🚀"
 SPEED_SLOW_FALLBACK_EMOJI = "🐢"
