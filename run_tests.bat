@@ -39,6 +39,24 @@ IF ERRORLEVEL 1 (
 REM ── Ensure reports directory exists ──────────────────────────────────────
 if not exist "tests\reports" mkdir tests\reports
 
+REM ── Generate Dynamic Filename (Timestamp + Auto-Version) ─────────────────
+REM Get current date and time safely without depending on local formats
+for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set dt=%%I
+set YYYY=%dt:~0,4%
+set MM=%dt:~4,2%
+set DD=%dt:~6,2%
+set HH=%dt:~8,2%
+set MIN=%dt:~10,2%
+set TIMESTAMP=%YYYY%-%MM%-%DD%_%HH%-%MIN%
+
+REM Count existing benchmark files to set the next version number
+set /a VERSION=1
+for /f %%A in ('dir /b /a-d "tests\reports\baseline_metrics_*.json" 2^>nul ^| find /c /v ""') do set /a VERSION=%%A + 1
+
+REM Set the final report file name
+set REPORT_FILE=baseline_metrics_%TIMESTAMP%_v%VERSION%.json
+REM ─────────────────────────────────────────────────────────────────────────
+
 echo ┌─────────────────────────────────────────────────────────┐
 echo │  Choose a test mode:                                    │
 echo │                                                         │
@@ -90,10 +108,11 @@ goto done
 :benchmarks_only
 echo.
 echo [RUN] Performance benchmarks...
-python -m pytest tests/performance/test_benchmark.py -v -s --tb=short --benchmark-json=tests/reports/baseline_metrics.json
+REM Use the new dynamic file name here
+python -m pytest tests/performance/test_benchmark.py -v -s --tb=short --benchmark-json=tests/reports/%REPORT_FILE%
 echo.
 echo [DONE] Baseline data saved to:
-echo        tests\reports\baseline_metrics.json
+echo        tests\reports\%REPORT_FILE%
 goto done
 
 :coverage_only
@@ -113,6 +132,7 @@ goto done
 :full_with_coverage
 echo.
 echo [RUN] Full suite + coverage + performance report...
+REM Use the new dynamic file name here too
 python -m pytest tests/ ^
     -v ^
     --tb=short ^
@@ -122,11 +142,11 @@ python -m pytest tests/ ^
     --cov=messages ^
     --cov-report=html:tests/reports/coverage_html ^
     --cov-report=term-missing ^
-    --benchmark-json=tests/reports/baseline_metrics.json
+    --benchmark-json=tests/reports/%REPORT_FILE%
 echo.
 echo [DONE] All outputs saved:
 echo   Coverage HTML  : tests\reports\coverage_html\index.html
-echo   Benchmark JSON : tests\reports\baseline_metrics.json
+echo   Benchmark JSON : tests\reports\%REPORT_FILE%
 start tests\reports\coverage_html\index.html
 goto done
 
