@@ -14,6 +14,12 @@ import concurrent.futures
 # Import our custom settings and messages files
 import config
 import messages
+from core.utils import apply_bidi, format_size, format_duration
+from core.fetcher import get_video_info
+from core.downloader import download_single_video, get_ydl_format_string
+from core.converter import convert_single_file
+import ui.state as state
+from ui.popups import custom_msg_box, custom_ask_yes_no, center_toplevel
 # ==================== NEW V2 UPDATES (Start) ====================
 import json
 import webbrowser
@@ -32,23 +38,6 @@ try:
 except:
     pass
 
-# Global variables
-# These remember the app's current state (e.g., is it downloading? converting?)
-video_rows = []
-consecutive_errors = 0 
-error_lock = threading.Lock()
-current_ffmpeg_process = None
-
-# --- Threading State Management (Signals and Smart Locks) ---
-_operation_lock = threading.Lock()  # Lock to prevent overlapping operations
-_ui_list_lock = threading.Lock()  # protects the video list from conflicts
-_fetch_event = threading.Event()    # Signal for fetching sizes
-_download_event = threading.Event() # Signal for downloading
-_convert_event = threading.Event()  # Signal for conversion
-
-# Variables for the dynamic buttons
-download_btn = None
-convert_btn = None
 
 # --- Custom Logger ---
 # This controls if we see yt-dlp text in the terminal or not based on config
@@ -164,7 +153,7 @@ quality_layout.pack(side="right")
 
 # Reset sizes when user changes the quality
 def on_quality_change(choice):
-    for row in video_rows:
+    for row in state.video_rows:
         row['bytes_size'] = -1 
         safe_ui_update(row['size_label'], text="N/A", text_color="white")
     update_dynamic_totals()
@@ -175,7 +164,7 @@ def on_fetch_sizes_click():
 
 # Stop fetching sizes
 def on_stop_fetch_click():
-    _fetch_event.clear() # Signal to stop fetching
+    state.fetch_event.clear() # Signal to stop fetching
     update_global_status("Stopping fetch... please wait.", "orange", "")
 
 fetch_action_frame = ctk.CTkFrame(quality_layout, fg_color="transparent")
@@ -222,17 +211,7 @@ global_warning_label = ctk.CTkLabel(status_bar, text="", font=(messages.FONT_FAM
 global_warning_label.pack(side="left")
 
 # ==================== UI Safety Helpers ====================
-# Safe ways to update text and progress bars without crashing the app
-def apply_bidi(text):
-    """Force Right-to-Left layout for normal text, labels, and buttons using Unicode."""
-    text = str(text)
-    if any('\u0600' <= c <= '\u06FF' for c in text):
-        # Split by newlines to handle multi-line popups safely
-        lines = text.split('\n')
-        # Wrap EACH line strictly: [RLE][RLM] text [RLM][PDF]
-        # This absolutely prevents punctuation (!, .) and English words from escaping to the wrong side.
-        return '\n'.join(['\u202B\u200F' + line + '\u200F\u202C' for line in lines])
-    return text
+#######################__1__############################
 
 
 def safe_ui_update(widget, **kwargs):
@@ -243,70 +222,10 @@ def safe_progress_update(widget, value):
     if widget and widget.winfo_exists():
         widget.set(value)
 
-# ==================== Core Functions & Custom Popups ====================
-# Put windows exactly in the middle of the screen
-def center_toplevel(top, width, height):
-    app.update_idletasks()
-    x = app.winfo_x() + (app.winfo_width() // 2) - (width // 2)
-    y = app.winfo_y() + (app.winfo_height() // 2) - (height // 2)
-    top.geometry(f"{width}x{height}+{x}+{y}")
 
-# Our custom message box builder
-def custom_msg_box(title, message, msg_type="error", custom_height=None):
-    dialog = ctk.CTkToplevel(app)
-    dialog.title(apply_bidi(title)) 
-    
-    # Use custom height if provided, otherwise fallback to config
-    h = custom_height if custom_height else config.POPUP_HEIGHT
-    center_toplevel(dialog, config.POPUP_WIDTH, h)
-    dialog.transient(app)
-    dialog.grab_set()
-    
-    def apply_icon():
-        try: dialog.iconbitmap(config.ICON_FILE)
-        except: pass
-    dialog.after(200, apply_icon)
-    
-    config.play_sound(msg_type)
-    
-    color = config.COLOR_RED 
-    icon = " 🛑 "
-    if msg_type == "warning":
-        color = "#FFCC00" 
-        icon = "⚠️ "
-    elif msg_type == "success":
-        color = "#28a745"
-        icon = "✅"
-    elif msg_type == "info":
-        color = config.COLOR_CYAN
-        icon = "ℹ️"
-        
-    # Architectural Solution: Frame Separation to perfectly align Emojis and Punctuation
-    title_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-    title_frame.pack(pady=(20, 5))
-    
-    is_arabic = any('\u0600' <= c <= '\u06FF' for c in str(title))
-    if is_arabic:
-        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="right")
-        ctk.CTkLabel(title_frame, text=apply_bidi(title), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="right")
-    else:
-        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="left")
-        ctk.CTkLabel(title_frame, text=title, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="left")
-    
-    lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400, justify="center")
-    lbl_msg.pack(pady=(0, 20), padx=20)
-    
-    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
-    app.wait_window(dialog)
+###################Start#####################################
 
-# Change raw bytes into readable text like MB or GB
-def format_size(bytes_size):
-    if bytes_size <= 0: return "0.0 MB"
-    mb = bytes_size / (1024 * 1024)
-    if mb >= 1000:
-        gb = mb / 1024
-        return f"{gb:.2f} GB"
-    return f"{mb:.1f} MB"
+#######################__2__############################
 
 # Change the text at the bottom bar
 def update_global_status(msg, color="white", warning_msg=""):
@@ -320,7 +239,7 @@ def update_dynamic_totals():
     total_seconds = 0
     all_fetched = True 
 
-    for row in video_rows:
+    for row in state.video_rows:
         if row["checkbox"].get() == 1: 
             if row['bytes_size'] > 0:
                 total_bytes += row['bytes_size']
@@ -351,39 +270,44 @@ def update_dynamic_totals():
     total_size_label.configure(text=size_text)
 
 # Check or uncheck all boxes
-def toggle_all(state):
-    for row_data in video_rows:
-        if state: row_data["checkbox"].select()
-        else: row_data["checkbox"].deselect()
+def toggle_all(is_checked):
+    # Loop through all videos and change their checkbox state
+    for row_data in state.video_rows:
+        if is_checked: 
+            row_data["checkbox"].select()
+        else: 
+            row_data["checkbox"].deselect()
+            
+    # Update the total size and time 
     update_dynamic_totals()
 
 # Delete selected videos from the list
 def remove_selected():
-    global video_rows
-    with _ui_list_lock:
-        for row_data in reversed(video_rows):
+    
+    with state.ui_list_lock:
+        for row_data in reversed(state.video_rows):
              if row_data["checkbox"].get() == 1:
                 row_data["frame"].destroy()
-                video_rows.remove(row_data)
+                state.video_rows.remove(row_data)
     update_dynamic_totals()
     try: app.after(10, lambda: list_frame._parent_canvas.yview_moveto(0.0))
     except: pass
 
-# Change seconds to mm:ss format
-def format_duration(seconds):
-    if not seconds: return "00:00"
-    m, s = divmod(int(seconds), 60)
-    h, m = divmod(m, 60)
-    if h > 0: return f"{h}:{m:02d}:{s:02d}"
-    return f"{m:02d}:{s:02d}"
+#######################__3__############################
 
-# Remove all videos from the list
+# Remove all videos from the list and reset scrollbar
 def clear_list():
-    global video_rows
+    
     for widget in list_frame.winfo_children():
         widget.destroy()
-    video_rows.clear()
+    state.video_rows.clear()
     update_dynamic_totals()
+    
+    # BUG FIX: Force scrollbar back to the top
+    try:
+        app.after(10, lambda: list_frame._parent_canvas.yview_moveto(0.0))
+    except Exception:
+        pass
 
 # Draw a single video row on the screen
 def add_video_row(index, title, duration, vid_url, status="Ready", status_color="#28a745"):
@@ -427,7 +351,7 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
         "dl_state": "ready",
         "error_msg": "" # Hidden pocket for errors
     }
-    video_rows.append(row_data)
+    state.video_rows.append(row_data)
 
     # Show error details when user clicks on a failed status
     def on_status_click(event, r=row_data):
@@ -448,10 +372,10 @@ def get_ydl_format_string(quality):
 
 # Get the size of one video from YouTube
 def fetch_size_for_single_video(row_data, quality):
-    global consecutive_errors
+    
     
     # Check if we should stop fetching
-    if not _fetch_event.is_set(): return 
+    if not state.fetch_event.is_set(): return 
     if not row_data['frame'].winfo_exists(): return
     if row_data['bytes_size'] != -1: return 
 
@@ -473,17 +397,17 @@ def fetch_size_for_single_video(row_data, quality):
             info = ydl.extract_info(row_data['url'], download=False)
             
             # Check again after extraction
-            if not _fetch_event.is_set(): 
+            if not state.fetch_event.is_set(): 
                 app.after(0, lambda: safe_ui_update(row_data['size_label'], text="N/A", text_color="white"))
                 return
                 
             if not info:
                 row_data['bytes_size'] = 0
                 app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Blocked", text_color=config.COLOR_RED))
-                with error_lock:
-                    consecutive_errors += 1
-                    if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
-                        _fetch_event.clear() # Stop fetching automatically
+                with state.error_lock:
+                    state.consecutive_errors += 1
+                    if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
+                        state.fetch_event.clear() # Stop fetching automatically
                 return
 
             file_size = info.get('filesize') or info.get('filesize_approx')
@@ -494,8 +418,8 @@ def fetch_size_for_single_video(row_data, quality):
                 row_data['bytes_size'] = file_size
                 size_str = format_size(file_size)
                 app.after(0, lambda: safe_ui_update(row_data['size_label'], text=size_str, text_color="white"))
-                with error_lock:
-                    consecutive_errors = 0
+                with state.error_lock:
+                    state.consecutive_errors = 0
             else:
                 row_data['bytes_size'] = 0
                 app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Unknown", text_color="#aaaaaa"))
@@ -503,16 +427,16 @@ def fetch_size_for_single_video(row_data, quality):
     except Exception:
         row_data['bytes_size'] = 0
         app.after(0, lambda: safe_ui_update(row_data['size_label'], text="Error", text_color=config.COLOR_RED))
-        with error_lock:
-            consecutive_errors += 1
-            if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
-                _fetch_event.clear() # Stop fetching automatically
+        with state.error_lock:
+            state.consecutive_errors += 1
+            if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
+                state.fetch_event.clear() # Stop fetching automatically
     
     app.after(0, update_dynamic_totals)
 
 # Manage multiple threads to fetch sizes fast
 def fetch_all_sizes_worker():
-    global consecutive_errors
+    
     
     # --- 1. VALIDATION FIRST (Before touching any locks) ---
     quality = quality_combo.get()
@@ -520,20 +444,20 @@ def fetch_all_sizes_worker():
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_QUALITY_MISSING, "warning"))
         return
         
-    with _ui_list_lock:
-        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    with state.ui_list_lock:
+        selected_rows = [r for r in state.video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_FETCH, "warning"))
         return
 
     # --- 2. NOW ACQUIRE LOCK ---
-    if not _operation_lock.acquire(blocking=False):
+    if not state.operation_lock.acquire(blocking=False):
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
     try:
-        _fetch_event.set() # Turn on the fetch signal
-        consecutive_errors = 0
+        state.fetch_event.set() # Turn on the fetch signal
+        state.consecutive_errors = 0
         app.after(0, lambda: update_global_status(f"Fetching sizes for {quality}...", config.COLOR_CYAN, ""))
         
         # Safely hide the fetch button and show the stop button
@@ -554,13 +478,13 @@ def fetch_all_sizes_worker():
             # 3. If the timeout finished but some threads are STILL running (Zombies)
             if not_done:
                 # Force them to stop immediately on their next cycle
-                _fetch_event.clear()
+                state.fetch_event.clear()
         
-        if consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
+        if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
             app.after(0, lambda: update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
             # FIXED: Increased height specifically for this long Arabic message
             app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error", custom_height=230))
-        elif _fetch_event.is_set():
+        elif state.fetch_event.is_set():
             blocked_count = sum(1 for r in selected_rows if r['bytes_size'] == 0)
             if blocked_count > 0:
                 app.after(0, lambda: update_global_status("Sizes fetched.", "#28a745", f"({blocked_count} video(s) might be blocked or failed)"))
@@ -570,8 +494,8 @@ def fetch_all_sizes_worker():
             app.after(0, lambda: update_global_status("Fetching stopped by user.", "orange", ""))
             
     finally:
-        _fetch_event.clear() # Safely turn off the signal
-        _operation_lock.release() # Release the lock for other operations
+        state.fetch_event.clear() # Safely turn off the signal
+        state.operation_lock.release() # Release the lock for other operations
         
         # Put the buttons back to normal
         app.after(0, lambda: stop_fetch_btn.pack_forget())
@@ -595,61 +519,35 @@ def render_chunk(entries_data, current_idx, qualities, chunk_size=config.RENDER_
         app.after(0, update_dynamic_totals) 
         app.after(0, lambda: update_global_status("Data fetched successfully. Ready to use.", "#28a745", ""))
 
-# Search YouTube link and get videos
+#################Start#################
+# Search YouTube link and get videos using core module
 def fetch_video_data():
     url = url_entry.get()
+    
+    # 1. Check if URL is empty
     if not url:
         app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_URL_MISSING, "error"))
         return
 
+    # 2. Update UI (Clear list and show loading text)
     app.after(0, clear_list)
-    app.after(0, lambda: update_global_status("Connecting to YouTube... Please wait.", config.COLOR_CYAN, ""))
-    app.after(0, lambda: quality_combo.set("Loading..."))
+    app.after(0, lambda: update_global_status(messages.STATUS_CONNECTING, config.COLOR_CYAN, ""))
+    app.after(0, lambda: quality_combo.set(messages.STATUS_LOADING))
 
-    is_single_video = ("watch?v=" in url) or ("youtu.be/" in url)
-    
-    ydl_opts = {
-        'quiet': True, 
-        'no_warnings': True,
-        'extract_flat': 'in_playlist',
-        'noplaylist': is_single_video
-    }
-    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            qualities = []
-            entries_data = [] 
-
-            if 'entries' in info:
-                for idx, entry in enumerate(info['entries'], start=1):
-                    title = entry.get('title', 'Unknown Title')
-                    dur = format_duration(entry.get('duration', 0))
-                    vid_url = entry.get('url')
-                    if not vid_url: vid_url = f"https://www.youtube.com/watch?v={entry.get('id')}"
-                    entries_data.append({'idx': idx, 'title': title, 'dur': dur, 'url': vid_url})
-                qualities = ["Best Quality", "Medium", "Low", "Audio Only (MP3)"]
-            else:
-                title = info.get('title', 'Unknown Title')
-                dur = format_duration(info.get('duration', 0))
-                vid_url = info.get('webpage_url', url)
-                entries_data.append({'idx': 1, 'title': title, 'dur': dur, 'url': vid_url})
-                
-                formats = info.get('formats', [])
-                q_set = set()
-                for f in formats:
-                    h = f.get('height')
-                    if h and h > 0: q_set.add(f"{h}p")
-                
-                qualities = sorted(list(q_set), key=lambda x: int(x.replace('p', '')), reverse=True)
-                if not qualities: qualities = ["Best Quality"]
-                qualities.append("Audio Only (MP3)")
-            
-            app.after(0, lambda: render_chunk(entries_data, 0, qualities))
+        # 3. Use the new core tool to get data safely
+        from core.fetcher import get_video_info
+        entries_data, qualities = get_video_info(url)
+        
+        # 4. Show the videos on the screen
+        app.after(0, lambda: render_chunk(entries_data, 0, qualities))
 
     except Exception as e:
-        app.after(0, lambda: update_global_status("Search Failed.", config.COLOR_RED, ""))
+        # 5. Show error popup if there is no internet
+        app.after(0, lambda: update_global_status(messages.STATUS_SEARCH_FAILED, config.COLOR_RED, ""))
         app.after(0, lambda e=e: custom_msg_box(messages.TITLE_ERROR, messages.MSG_CONN_ERROR, "error"))
+#################END#################
+
 
 # Start searching when button is clicked
 def on_search_click():
@@ -679,102 +577,83 @@ def find_downloaded_file(save_path, title):
     except: pass
     return None
 
+##################Start########################
 # The main function to download files
+# The main loop to process downloads
 def _download_process(rows_to_download, quality, save_path):
-    format_str = get_ydl_format_string(quality)
-    postprocessors = []
-    if "Audio Only" in quality:
-        postprocessors = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': config.AUDIO_BITRATE}]
-
-    # Define the logger ONCE outside the loop for better memory performance
-    class DownloadLogger:
-        def __init__(self, row_data):
-            self.row_data = row_data
-            
-        def debug(self, msg):
-            if config.SHOW_TERMINAL_LOGS: print(msg)
-            if "has already been downloaded" in msg or "already exists" in msg:
-                self.row_data['dl_state'] = 'already_exists'
-                app.after(0, lambda r=self.row_data: safe_ui_update(r['status_label'], text="Already Exists", text_color="#28a745"))
-                app.after(0, lambda r=self.row_data: safe_progress_update(r['progress'], 1.0))
-                app.after(0, lambda r=self.row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
-        def warning(self, msg): 
-            if config.SHOW_TERMINAL_LOGS: print(msg)
-        def error(self, msg): 
-            if config.SHOW_TERMINAL_LOGS: print(msg)
-
     for row_data in rows_to_download:
-        if not _download_event.is_set(): break 
+        # Check if download is cancelled before starting the next video
+        if not state.download_event.is_set(): break 
         if not row_data['frame'].winfo_exists(): continue 
         
         row_data['dl_state'] = 'preparing'
         app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Preparing...", text_color=config.COLOR_MAGENTA))
 
-        def progress_hook(d, r=row_data):
-            if not _download_event.is_set():
-                raise ValueError("DOWNLOAD_CANCELLED")
-                
+        # The Walkie-Talkie function to hear progress from downloader.py
+        def handle_progress(status, percent, total_bytes, r=row_data):
             if not r['frame'].winfo_exists(): return 
             
-            if d['status'] == 'downloading':
-                total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-                downloaded = d.get('downloaded_bytes', 0)
-                if total > 0:
-                    percent = downloaded / total
-                    app.after(0, lambda p=percent: safe_progress_update(r['progress'], p))
-                    app.after(0, lambda p=percent: safe_ui_update(r['percent_label'], text=f"{int(p*100)}%"))
-                    if r['bytes_size'] == -1: 
-                        size_str = format_size(total)
-                        app.after(0, lambda: safe_ui_update(r['size_label'], text=size_str))
-                    if r.get('dl_state') not in ['canceled', 'already_exists']:
-                        r['dl_state'] = 'downloading'
-                        app.after(0, lambda: safe_ui_update(r['status_label'], text="Downloading...", text_color=config.COLOR_MAGENTA))
+            if status == 'downloading':
+                app.after(0, lambda p=percent: safe_progress_update(r['progress'], p))
+                app.after(0, lambda p=percent: safe_ui_update(r['percent_label'], text=f"{int(p*100)}%"))
+                # Update file size if we didn't fetch it earlier
+                if r['bytes_size'] == -1 and total_bytes > 0:
+                    from core.utils import format_size
+                    size_str = format_size(total_bytes)
+                    app.after(0, lambda: safe_ui_update(r['size_label'], text=size_str))
+                # Change status text safely
+                if r.get('dl_state') not in ['canceled', 'already_exists']:
+                    r['dl_state'] = 'downloading'
+                    app.after(0, lambda: safe_ui_update(r['status_label'], text="Downloading...", text_color=config.COLOR_MAGENTA))
             
-            elif d['status'] == 'finished':
+            elif status == 'finished':
                 if r.get('dl_state') != 'already_exists':
                     r['dl_state'] = 'processing'
                     app.after(0, lambda: safe_progress_update(r['progress'], 1.0))
                     app.after(0, lambda: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
                     app.after(0, lambda: safe_ui_update(r['status_label'], text="Processing...", text_color="#FFCC00"))
+                    
+            elif status == 'already_exists':
+                r['dl_state'] = 'already_exists'
+                app.after(0, lambda: safe_ui_update(r['status_label'], text="Already Exists", text_color="#28a745"))
+                app.after(0, lambda: safe_progress_update(r['progress'], 1.0))
+                app.after(0, lambda: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
 
-        ydl_opts = {
-            'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'),
-            'format': format_str,
-            'progress_hooks': [progress_hook],
-            'noplaylist': True,
-            'quiet': True,
-            'no_warnings': True,
-            'continuedl': True, 
-            'logger': DownloadLogger(row_data),
-            'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
-            'socket_timeout': config.SOCKET_TIMEOUT, # Use time from config
-            'retries': config.DOWNLOAD_RETRIES       # Use retries from config
-        }
-
-        if postprocessors:
-            ydl_opts['postprocessors'] = postprocessors
+        # The Walkie-Talkie function to check cancellation
+        def check_cancelled():
+            return not state.download_event.is_set()
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([row_data['url']])
-                
-            if _download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
+            # Call the clean core engine
+            download_single_video(
+                row_data['url'], 
+                row_data['title'], 
+                save_path, 
+                quality, 
+                handle_progress, 
+                check_cancelled
+            )
+            
+            # If finished successfully
+            if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
                 app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
                 app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
                 
         except Exception as e:
-            if not _download_event.is_set():
+            # If error happens or user cancels
+            if not state.download_event.is_set():
                 pass 
             else:
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = str(e)
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
+###############END#######################
 
 # Start the download background task_v2
 def download_worker():
-    global download_btn
+    
     
     # --- 1. VALIDATION FIRST (Fixes Button Jitter) ---
     save_path = path_entry.get()
@@ -782,8 +661,8 @@ def download_worker():
         app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error"))
         return
 
-    with _ui_list_lock:
-        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    with state.ui_list_lock:
+        selected_rows = [r for r in state.video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_DL, "warning"))
         return
@@ -794,12 +673,12 @@ def download_worker():
         return
 
     # --- 2. NOW ACQUIRE LOCK & START UI CHANGES ---
-    if not _operation_lock.acquire(blocking=False):
+    if not state.operation_lock.acquire(blocking=False):
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
     try:
-        _download_event.set() # Turn on download signal
+        state.download_event.set() # Turn on download signal
         
         # Change button to RED safely
         if download_btn:
@@ -810,7 +689,7 @@ def download_worker():
         _download_process(selected_rows, quality, save_path)
 
         # Check for errors and show final status without playing sounds
-        if _download_event.is_set():
+        if state.download_event.is_set():
             failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
             if failed_count > 0:
                 app.after(0, lambda: update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
@@ -821,8 +700,8 @@ def download_worker():
             app.after(0, lambda: update_global_status("Downloads canceled by user.", "orange", ""))
             
     finally:
-        _download_event.clear() # Safely turn off the signal
-        _operation_lock.release() # Release lock for other operations
+        state.download_event.clear() # Safely turn off the signal
+        state.operation_lock.release() # Release lock for other operations
         
         if download_btn:
             # FIXED: Added state="normal" to wake the button up
@@ -885,75 +764,28 @@ def ask_conversion_speed():
     
     app.wait_window(dialog)
     return result[0]
-# Ask user a Yes or No question
-def custom_ask_yes_no(title, message, icon="⚠️"):
-    dialog = ctk.CTkToplevel(app)
-    dialog.title(apply_bidi(title))
-    center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT)
-    dialog.transient(app)
-    dialog.grab_set()
-    
-    add_dialog_icon(dialog)
-    config.play_sound("warning")
-    result = [False]
-    def set_res(val):
-        result[0] = val
-        dialog.destroy()
-        
-    # --- Architectural Solution: Header Frame (Icon + Title) ---
-    # This separates the icon from the multi-line message to prevent layout breaking
-    title_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-    title_frame.pack(pady=(20, 5))
-    
-    warning_color = "#FFCC00" # Yellow color for warnings
-    is_arabic_title = any('\u0600' <= c <= '\u06FF' for c in str(title))
-    
-    if is_arabic_title:
-        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="right")
-        ctk.CTkLabel(title_frame, text=apply_bidi(title), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="right")
-    else:
-        ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="left")
-        ctk.CTkLabel(title_frame, text=title, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=warning_color).pack(side="left")
 
-    # --- Clean, Centered Body Message ---
-    # justify="center" ensures that multi-line Arabic text stays balanced
-    lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=380, justify="center")
-    lbl_msg.pack(pady=(5, 20), padx=20)
-    
-    btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-    btn_frame.pack()
-    
-    big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
-
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True)).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_NO), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res(False)).pack(side="left", padx=10)
-    
-    app.wait_window(dialog)
-    return result[0]
-
+#############Start################
 # The main function to convert files to MP4 using FFmpeg
+# The main background worker for converting files
 def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_first):
-    global current_ffmpeg_process, convert_btn # <--- FIXED: Declared at the very top
     
-    # Ensure no other operation is running
-    if not _operation_lock.acquire(blocking=False):
+    
+    # 1. Safety Lock
+    if not state.operation_lock.acquire(blocking=False):
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
         
     try:
-        _convert_event.set() # Turn on conversion signal
+        state.convert_event.set() # Turn on conversion signal
         
         if convert_btn:
             app.after(0, lambda: convert_btn.configure(text="Stop Convert", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click))
 
-    
-
-        # Download files first if needed
+        # 2. Download missing files first if requested
         if do_download_first:
-            _download_event.set() # Turn on download signal internally
+            state.download_event.set() # Turn on download signal
             
-            # --- Sync Download Button State ---
-            global download_btn
             if download_btn:
                 app.after(0, lambda: download_btn.configure(text="Cancel Download", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click))
 
@@ -961,102 +793,108 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 app.after(0, lambda: update_global_status("Downloading missing files...", config.COLOR_MAGENTA, ""))
                 _download_process(selected_rows, quality, save_path)
             finally:
-                _download_event.clear() # Safely turn off download signal
-                
-                # --- Revert Download Button State ---
+                state.download_event.clear()
                 if download_btn:
-                    # FIXED: Added state="normal"
                     app.after(0, lambda: download_btn.configure(text="Download Selected", state="normal", fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click))
             
-            if not _convert_event.is_set(): 
+            # Stop if user cancelled during download
+            if not state.convert_event.is_set(): 
                 app.after(0, lambda: update_global_status("Conversion canceled.", "orange", ""))
                 return
                 
         files_to_delete = []
         app.after(0, lambda: update_global_status("Starting conversion...", config.COLOR_CYAN, ""))
         
+        # 3. Process each video in the list
         for row_data in selected_rows:
-            if not _convert_event.is_set(): break 
+            if not state.convert_event.is_set(): break 
             if not row_data['frame'].winfo_exists(): continue 
             
+            # Find the file on disk
             input_file = find_downloaded_file(save_path, row_data['title'])
             if not input_file:
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = "File not found in the save path."
                 app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
                 continue
-                
-            if input_file.endswith(('.mp4')):
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Already MP4", text_color="#28a745"))
-                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
-                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
-                continue
-                
-            if input_file.endswith(('.mp3', '.m4a', '.wav')):
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Audio File", text_color="#28a745"))
-                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
-                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
-                continue
-                
-            output_file = os.path.splitext(input_file)[0] + '.mp4'
             
+            # Setup UI for conversion
             app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converting...", text_color=config.COLOR_CYAN))
             app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="---", text_color=config.COLOR_CYAN))
             app.after(0, lambda r=row_data: r['progress'].configure(mode="indeterminate", progress_color=config.COLOR_CYAN))
             app.after(0, lambda r=row_data: r['progress'].start())
-            
-            update_status_msg = "Remuxing" if speed_choice == "fast" else "Re-encoding"
-            app.after(0, lambda: update_global_status(f"Converting ({update_status_msg})...", config.COLOR_CYAN, ""))
-            
-            # Build FFmpeg command
-            cmd = [imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-i', input_file]
-            if speed_choice == "fast":
-                cmd.extend(['-c', 'copy'])
-            else:
-                cmd.extend(['-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac'])
-            cmd.append(output_file)
-            
-            # Run FFmpeg
+
+            # The Walkie-Talkie for the core converter to talk back to UI
+            def converter_callback(status, r=row_data):
+                if not r['frame'].winfo_exists(): return
+                
+                if status == 'already_mp4':
+                    app.after(0, lambda: r['progress'].stop()) # <--- BUG FIX: Stop the bouncing bar
+                    app.after(0, lambda: safe_ui_update(r['status_label'], text=messages.STATUS_ALREADY_MP4, text_color="#28a745"))
+                    app.after(0, lambda: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
+                    app.after(0, lambda: safe_progress_update(r['progress'], 1.0))
+                    app.after(0, lambda: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+                elif status == 'audio_file':
+                    app.after(0, lambda: r['progress'].stop()) # <--- BUG FIX: Stop the bouncing bar
+                    app.after(0, lambda: safe_ui_update(r['status_label'], text=messages.STATUS_AUDIO_FILE, text_color="#28a745"))
+                    app.after(0, lambda: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
+                    app.after(0, lambda: safe_progress_update(r['progress'], 1.0))
+                    app.after(0, lambda: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+                elif status == 'started_remux':
+                    app.after(0, lambda: update_global_status(messages.STATUS_CONVERTING_REMUX, config.COLOR_CYAN, ""))
+                elif status == 'started_reencode':
+                    app.after(0, lambda: update_global_status(messages.STATUS_CONVERTING_RECODE, config.COLOR_CYAN, ""))
+                elif status == 'finished':
+                    app.after(0, lambda: r['progress'].stop())
+                    app.after(0, lambda: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
+                    app.after(0, lambda: safe_progress_update(r['progress'], 1.0))
+                    app.after(0, lambda: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+                    app.after(0, lambda: safe_ui_update(r['status_label'], text="Converted", text_color="#28a745"))
+
+            # Tell core to check if user clicked stop
+            def check_cancelled():
+                return not state.convert_event.is_set()
+
+            # 4. Call the core engine to do the actual conversion
             try:
-                current_ffmpeg_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                current_ffmpeg_process.wait() 
+                converted_file = convert_single_file(
+                    input_file=input_file,
+                    speed_choice=speed_choice,
+                    progress_callback=converter_callback,
+                    is_cancelled=check_cancelled
+                )
                 
-                if not _convert_event.is_set(): 
-                    raise Exception("KILLED_BY_USER")
+                # If a file was converted successfully, add to delete list
+                if converted_file:
+                    files_to_delete.append(converted_file)
                     
-                if current_ffmpeg_process.returncode != 0:
-                    raise Exception("FFMPEG_ERROR: Something went wrong during conversion.")
-                
+            except InterruptedError:
+                # User pressed stop
                 app.after(0, lambda r=row_data: r['progress'].stop())
                 app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
-                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 1.0))
-                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
-                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Converted", text_color="#28a745"))
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED))
+                app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
+                app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED))
+                break
                 
-                files_to_delete.append(input_file)
             except Exception as e:
+                # Actual error happened
                 app.after(0, lambda r=row_data: r['progress'].stop())
                 app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
-                if not _convert_event.is_set():
-                    app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED))
-                    app.after(0, lambda r=row_data: safe_progress_update(r['progress'], 0))
-                    app.after(0, lambda r=row_data: safe_ui_update(r['percent_label'], text="0%", text_color=config.COLOR_RED))
-                else:
-                    row_data['dl_state'] = 'failed'
-                    row_data['error_msg'] = str(e)
-                    app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
-            finally:
-                current_ffmpeg_process = None
+                row_data['dl_state'] = 'failed'
+                row_data['error_msg'] = str(e)
+                app.after(0, lambda r=row_data: safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
                 
-        # Check for errors and show final status
-        if _convert_event.is_set():
+        # 5. Final check after all conversions
+        if state.convert_event.is_set():
             failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
             if failed_count > 0:
                 app.after(0, lambda: update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
             else:
                 app.after(0, lambda: update_global_status("All conversions completed successfully.", "#28a745", ""))
-                app.after(0, lambda: config.play_sound("success")) # Play success sound
+                app.after(0, lambda: config.play_sound("success"))
                 
+            # Ask to clean up old files
             if files_to_delete:
                 def ask_cleanup():
                     if custom_ask_yes_no(messages.TITLE_CONFIRM, messages.MSG_CLEANUP):
@@ -1069,12 +907,13 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             app.after(0, lambda: update_global_status("Conversion stopped by user.", "orange", ""))
 
     finally:
-        _convert_event.clear() # Safely turn off the signal
-        _operation_lock.release() # Release lock
+        state.convert_event.clear()
+        state.operation_lock.release() 
         
         if convert_btn:
-            # FIXED: Added state="normal" to wake the button up
             app.after(0, lambda: convert_btn.configure(text="Convert to MP4", state="normal", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click))
+#############END################
+
 # ==================== Bottom Actions ====================
 # The main big buttons at the bottom of the app
 
@@ -1090,22 +929,22 @@ def on_download_click():
 
 # Cancel download safely
 def on_cancel_download_click():
-    if not _download_event.is_set():
+    if not state.download_event.is_set():
         return
 
-    _download_event.clear() # Signal yt-dlp to stop
-    _convert_event.clear()  # Ensure conversion cancels too if they are synced
+    state.download_event.clear() # Signal yt-dlp to stop
+    state.convert_event.clear()  # Ensure conversion cancels too if they are synced
     
     # Instant UI Feedback to feel snappy
-    global download_btn
+    
     if download_btn:
         download_btn.configure(text="Canceling...", state="disabled", fg_color="orange", hover_color="orange")
         
     update_global_status("Canceling download... please wait.", "orange", "")
     
-    # FIXED: Removed _ui_list_lock to prevent Main-Thread Deadlock.
-    # Safe to iterate video_rows directly here.
-    for r in video_rows:
+    # FIXED: Removed state.ui_list_lock to prevent Main-Thread Deadlock.
+    # Safe to iterate state.video_rows directly here.
+    for r in state.video_rows:
         if r.get('dl_state') in ['preparing', 'downloading']:
             r['dl_state'] = 'canceled'
             safe_ui_update(r['status_label'], text="Canceled", text_color=config.COLOR_RED)
@@ -1115,7 +954,7 @@ def on_cancel_download_click():
 # Start conversion
 def on_convert_click():
     # Check if ANY operation is currently running using Events (Safe for UI thread)
-    if _fetch_event.is_set() or _download_event.is_set() or _convert_event.is_set():
+    if state.fetch_event.is_set() or state.download_event.is_set() or state.convert_event.is_set():
         custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning")
         return
         
@@ -1124,8 +963,8 @@ def on_convert_click():
         custom_msg_box(messages.TITLE_ERROR, messages.MSG_INVALID_PATH, "error")
         return
 
-    with _ui_list_lock:
-        selected_rows = [r for r in video_rows if r["checkbox"].get() == 1]
+    with state.ui_list_lock:
+        selected_rows = [r for r in state.video_rows if r["checkbox"].get() == 1]
     if not selected_rows:
         custom_msg_box(messages.TITLE_WARNING, messages.MSG_NO_VIDEO_CONV, "warning")
         return
@@ -1161,13 +1000,13 @@ _stop_convert_dialog_open = False # Guard variable
 
 # Stop conversion with Smart UX Logic
 def on_stop_convert_click():
-    global current_ffmpeg_process, convert_btn, _stop_convert_dialog_open 
+    global convert_btn, _stop_convert_dialog_open 
     
     if _stop_convert_dialog_open:
         return # Prevent double clicks
         
     # --- Smart Logic: Check if we are currently downloading ---
-    if _download_event.is_set():
+    if state.download_event.is_set():
         _stop_convert_dialog_open = True
         if convert_btn:
             convert_btn.configure(state="disabled") # Disable button
@@ -1180,22 +1019,22 @@ def on_stop_convert_click():
                 convert_btn.configure(state="normal") # Re-enable
                 
         if choice:
-            _convert_event.clear() # Cancel ONLY the conversion
+            state.convert_event.clear() # Cancel ONLY the conversion
             if convert_btn: 
                 convert_btn.configure(text="Convert to MP4", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click)
             update_global_status("Conversion canceled. Download will continue.", "orange", "")
         return
 
     # --- Normal Stop Conversion Logic (if FFmpeg is running) ---
-    _convert_event.clear() 
-    _download_event.clear() 
+    state.convert_event.clear() 
+    state.download_event.clear() 
     
     # Instant UI Feedback
     if convert_btn:
         convert_btn.configure(text="Stopping...", state="disabled", fg_color="orange", hover_color="orange")
         
     try:
-        proc = current_ffmpeg_process
+        proc = state.current_ffmpeg_process
         if proc is not None:
             proc.terminate()
     except Exception:
@@ -1353,12 +1192,12 @@ def v2_exit_dialog(title, message, green_text, red_text):
 
 def _force_kill_all_background_processes():
     """Signals all worker events to stop, then forcefully kills any live FFmpeg subprocess."""
-    _download_event.clear()
-    _convert_event.clear()
-    _fetch_event.clear()
+    state.download_event.clear()
+    state.convert_event.clear()
+    state.fetch_event.clear()
 
-    global current_ffmpeg_process
-    proc = current_ffmpeg_process
+    
+    proc = state.current_ffmpeg_process
     if proc is not None:
         try:
             proc.terminate() 
@@ -1372,7 +1211,7 @@ def _force_kill_all_background_processes():
 def on_closing():
     choice = v2_exit_dialog(messages.TITLE_EXIT, messages.MSG_EXIT_ASK, messages.BTN_STAY, messages.BTN_LEAVE)
     if choice == "leave":
-        if _download_event.is_set() or _convert_event.is_set() or _fetch_event.is_set():
+        if state.download_event.is_set() or state.convert_event.is_set() or state.fetch_event.is_set():
             warn_choice = v2_exit_dialog(messages.TITLE_EXIT_WARN, messages.MSG_EXIT_WARN, messages.BTN_WAIT, messages.BTN_FORCE_QUIT)
             if warn_choice == "leave":
                 _force_kill_all_background_processes() 

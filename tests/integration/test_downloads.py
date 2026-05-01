@@ -6,6 +6,7 @@ Uses mocks to prevent real network calls to YouTube.
 """
 
 import pytest
+import ui.state as state
 
 @pytest.fixture(scope="module")
 def m(main_module):
@@ -21,7 +22,7 @@ def test_fetch_size_success(m, mock_ydl_instance, mock_video_row):
     mock_ydl_instance.extract_info.return_value = {'filesize': 10485760}
     
     # 2. Set the fetch event to True via the module fixture (Thread-safe)
-    m._fetch_event.set()
+    state.fetch_event.set()
     
     # 3. Call the worker function
     m.fetch_size_for_single_video(mock_video_row, "Best Quality")
@@ -35,7 +36,7 @@ def test_fetch_size_blocked_by_youtube(m, mock_ydl_instance, mock_video_row):
     # 1. Simulate YouTube blocking (returns None)
     mock_ydl_instance.extract_info.return_value = None
     
-    m._fetch_event.set()
+    state.fetch_event.set()
     
     m.fetch_size_for_single_video(mock_video_row, "Best Quality")
     
@@ -46,13 +47,13 @@ def test_fetch_size_blocked_by_youtube(m, mock_ydl_instance, mock_video_row):
 def test_cancel_download_logic(m, mock_video_row):
     """Test that clicking cancel stops the download events."""
     # Access events directly from the module fixture to ensure we are testing the live state
-    m._download_event.set()
-    m._convert_event.set()
+    state.download_event.set()
+    state.convert_event.set()
     mock_video_row['dl_state'] = 'downloading'
     
     # Simulate clicking Cancel
     m.on_cancel_download_click()
     
     # Verify events are cleared (OFF)
-    assert not m._download_event.is_set()
-    assert not m._convert_event.is_set()
+    assert not state.download_event.is_set()
+    assert not state.convert_event.is_set()

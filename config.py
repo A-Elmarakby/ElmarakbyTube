@@ -159,3 +159,11 @@ SPEED_SLOW_ICON_PATH = "assets/slow_icon.png"
 SPEED_ICON_SIZE = (22, 22)
 SPEED_FAST_FALLBACK_EMOJI = "🚀"
 SPEED_SLOW_FALLBACK_EMOJI = "🐢"
+
+# ==========================================
+# VIDEO QUALITY SETTINGS
+# ==========================================
+QUALITY_BEST = "Best Quality"
+QUALITY_MEDIUM = "Medium"
+QUALITY_LOW = "Low"
+QUALITY_AUDIO = "Audio Only (MP3)"

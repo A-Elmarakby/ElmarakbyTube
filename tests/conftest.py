@@ -10,6 +10,7 @@ import threading
 import os
 import pytest
 from unittest.mock import MagicMock
+import ui.state as state
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. BUILD A STATEFUL MOCK WIDGET
@@ -136,13 +137,28 @@ def main_module():
 @pytest.fixture(autouse=True)
 def reset_app_state(main_module):
     """Clean up memory before every single test."""
-    main_module.video_rows.clear()
-    main_module.consecutive_errors = 0
-    if main_module._operation_lock.locked():
-        main_module._operation_lock.release()
-    main_module._fetch_event.clear()
-    main_module._download_event.clear()
-    main_module._convert_event.clear()
+    # 1. Clear the video list
+    state.video_rows.clear()
+    
+    # 2. Reset error counter
+    state.consecutive_errors = 0
+    
+    # 3. Release locks if they are stuck
+    if hasattr(state, 'operation_lock') and state.operation_lock.locked():
+        state.operation_lock.release()
+    if hasattr(state, 'ui_list_lock') and state.ui_list_lock.locked():
+        state.ui_list_lock.release()
+    if hasattr(state, 'error_lock') and state.error_lock.locked():
+        state.error_lock.release()
+        
+    # 4. Clear all events (signals)
+    if hasattr(state, 'fetch_event'): state.fetch_event.clear()
+    if hasattr(state, 'download_event'): state.download_event.clear()
+    if hasattr(state, 'convert_event'): state.convert_event.clear()
+    
+    # 5. Reset FFmpeg process
+    state.current_ffmpeg_process = None
+    
     yield
 
 @pytest.fixture

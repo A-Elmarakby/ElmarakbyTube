@@ -68,7 +68,7 @@ echo │  4 = UI state tests only                                │
 echo │  5 = Benchmarks only  → outputs JSON + CSV             │
 echo │  6 = Coverage report  → opens HTML in browser          │
 echo │  7 = FULL + Coverage  (Recommended before Refactor)    │
-└─────────────────────────────────────────────────────────┘
+echo └────────────────────────────────────────────────────────┘
 echo.
 set /p CHOICE="Enter number (1-7): "
 
@@ -122,6 +122,7 @@ python -m pytest tests/ ^
     --cov=main ^
     --cov=config ^
     --cov=messages ^
+    --cov=core ^
     --cov-report=html:tests/reports/coverage_html ^
     --cov-report=term-missing
 echo.
@@ -140,6 +141,7 @@ python -m pytest tests/ ^
     --cov=main ^
     --cov=config ^
     --cov=messages ^
+    --cov=core ^
     --cov-report=html:tests/reports/coverage_html ^
     --cov-report=term-missing ^
     --benchmark-json=tests/reports/%REPORT_FILE%
