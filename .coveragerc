@@ -1,0 +1,78 @@
+# =======================================================================
+#  .coveragerc — Coverage.py configuration for ElmarakbyTube Downloader
+#  Place this file in the PROJECT ROOT (next to main.py and pytest.ini)
+# =======================================================================
+
+[run]
+# ── What to measure ────────────────────────────────────────────────────
+# We measure source explicitly so coverage never accidentally counts
+# the tests themselves.  This list must stay in sync with the --cov=
+# flags in pytest.ini.
+source =
+    main
+    config
+    messages
+    core
+    ui
+
+# ── What to ignore entirely ─────────────────────────────────────────────
+# These paths are excluded from data collection, not just the report.
+# That means they will never appear as "uncovered" lines anywhere.
+omit =
+    # The entire tests folder and every conftest inside it
+    tests/*
+    tests/**/*
+    conftest.py
+
+    # Virtual-environment folders (common names)
+    venv/*
+    .venv/*
+    env/*
+
+    # Windows packaging artefacts
+    setup.py
+    setup.cfg
+
+    # The platform-specific sound code can't run on the CI runner
+    # (winsound is Windows-only).  Mark it as a pragma instead of
+    # omitting the whole file so the rest of config.py is still measured.
+    # (See the pragma note below.)
+
+[report]
+# ── Minimum acceptable coverage gate ───────────────────────────────────
+# Uncomment and raise this number gradually as coverage improves.
+# fail_under = 60
+
+# ── Lines that should never count as "missed" ──────────────────────────
+# These are lines that are genuinely untestable in a headless CI
+# environment (platform guards, defensive fallbacks, etc.).
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Defensive abstract / unreachable guards
+    raise NotImplementedError
+    raise AssertionError
+
+    # Platform guards: winsound only exists on Windows
+    if sys.platform != "win32"
+    import winsound
+
+    # The __main__ guard in main.py is never executed by pytest
+    if __name__ == .__main__.
+
+    # Type-checking-only imports
+    if TYPE_CHECKING
+
+[html]
+# ── HTML report settings ────────────────────────────────────────────────
+# Output folder matches what pytest.ini and run_tests.bat both expect.
+directory = tests/reports/coverage_html
+
+# Show every line, not just missed ones, so reviewers can confirm what
+# IS covered rather than only seeing red lines.
+show_contexts = true
+
+[xml]
+# Optional: uncomment if you want a machine-readable report for CI/CD.
+# output = tests/reports/coverage.xml
