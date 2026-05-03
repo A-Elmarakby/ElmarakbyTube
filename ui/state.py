@@ -20,9 +20,27 @@ convert_event = threading.Event()   # Signal: conversion is running
 current_ffmpeg_process = None  # Reference to the live FFmpeg subprocess
 
 # --- UI Widget References ---
-# Set by layout.py after the buttons are created
+# Set by layout.py after the widgets are created
+
+# Main buttons
 download_btn = None   
 convert_btn = None
+fetch_btn = None
+stop_fetch_btn = None
+
+# Input fields and options
+path_entry = None
+url_entry = None
+quality_combo = None
+
+# List and total info
+list_frame = None
+total_time_label = None
+total_size_label = None
+
+# Bottom text labels
+global_status_label = None
+global_warning_label = None
 
 ui_list_lock = threading.Lock()   # Protects the video UI list
 error_lock = threading.Lock()     # Protects the error counter
