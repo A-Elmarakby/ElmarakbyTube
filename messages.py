@@ -35,18 +35,43 @@ TITLE_ALERT = "تنبيه"
 # ------------------------------------------
 # 4. Core System Messages & Warnings
 # ------------------------------------------
+# User forgot to pick video quality.
 MSG_QUALITY_MISSING = "نسيت تختار الجودة اللي أنت عايزها؟\nحدّد الجودة من المربع اللي فوق قبل ما تحمّل أو تحسب الحجم."
+
+# User did not select any video to fetch size.
 MSG_NO_VIDEO_FETCH = "اختار فيديو واحد على الأقل عشان نعرف مساحته."
+
+# User did not select any video to download.
 MSG_NO_VIDEO_DL = "اختار فيديو واحد على الأقل عشان نحمّله."
+
+# User did not select any video to convert.
 MSG_NO_VIDEO_CONV = "اختار فيديو واحد على الأقل عشان نحوله."
+
+# Internet error or YouTube block.
 MSG_BLOCKED = "الإنترنت فيه مشكلة أو يوتيوب قفش علينا شوية عشان بعتنا طلبات كتير ورا بعض.\n\nروح اشرب لك خربوش شاي وجرب تاني كمان شوية.\nولو مستعجل قوي، شغل VPN واعمل نفسك من بنها."
+
+# User did not put a link.
 MSG_URL_MISSING = "نسيت تحط رابط يوتيوب!\nحط الرابط وجرب تاني."
+
+# YouTube does not answer.
 MSG_CONN_ERROR = "يوتيوب مش راضي يرد علينا!\nيا إما النت عندك بعافية شوية، أو الرابط ده فيه مشكلة."
+
+# User did not choose a save folder.
 MSG_INVALID_PATH = "اختار المكان اللي هنحفظ فيه الفيديوهات الأول!\nمن المربع اللي فوق على الشمال اضغط على (Browse)."
+
+# Ask about conversion speed.
 MSG_SPEED_PROMPT = "تحب ننجز ونحول في السريع، ولا ناخد وقتنا على الهادي؟"
+
+# Tell user they must download first before convert.
 MSG_DL_REQUIRED = "الفيديوهات اللي انت اخترتها لسه متحملتش أصلًا.\nتحب أحملهالك الأول وبعدين أحوّلهالك؟"
+
+# Ask to delete old files after convert.
 MSG_CLEANUP = "التحويل خلص الحمدلله!\nأمسح لك بقى الملفات القديمة عشان منزحمش الجهاز على الفاضي؟"
+
+# Ask to keep download and stop convert.
 MSG_KEEP_DL_CANCEL_CONV = "في تحميل شغال دلوقتي.\nتحب نكمّل التحميل ونلغي التحويل؟"
+
+# A job is already running.
 MSG_OPERATION_RUNNING = "⏳ في عملية شغالة دلوقتي، استنى شوية "
 
 # ------------------------------------------
@@ -69,6 +94,7 @@ MSG_EXIT_ASK = "خلاص عايز تسيبني وتمشي؟"
 BTN_STAY = "مقدرش أستغنى عنك"
 BTN_LEAVE = "معلش، لازم أمشي"
 
+# Exit warning (jobs are running).
 TITLE_EXIT_WARN = "خد بالك!! ⚠️"
 MSG_EXIT_WARN = "أنت بتحمل او بتحول ملفات دلوقتي! متأكد إنك عايز تقفل وتلغي العملية؟"
 BTN_FORCE_QUIT = "ايوه اقفل"
