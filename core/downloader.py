@@ -9,16 +9,32 @@ import yt_dlp
 import imageio_ffmpeg
 import config
 
-def get_ydl_format_string(quality):
-    # Choose the right video format based on what the user selected
-    if "Audio Only" in quality: return 'bestaudio/best'
-    if "Medium" in quality or "720" in quality: return 'bestvideo[height<=720]+bestaudio/best'
-    if "Low" in quality or "480" in quality: return 'bestvideo[height<=480]+bestaudio/best'
-    
-    # Extract numbers like 1080 from "1080p"
-    height = ''.join(filter(str.isdigit, quality))
-    if height: return f'bestvideo[height<={height}]+bestaudio/best'
-    
+def get_ydl_format_string(quality: str) -> str:
+    """
+    Change the quality string from the UI into a format that yt-dlp understands.
+    """
+
+    # 1. Check for Audio Only. This works for single videos and playlists.
+    if "Audio Only" in quality:
+        return 'bestaudio/best'
+
+    # 2. Check for Playlist constants (Exact match is safer here).
+    if quality == config.QUALITY_BEST:
+        return 'bestvideo+bestaudio/best'
+
+    if quality == config.QUALITY_MEDIUM:
+        return 'bestvideo[height<=720]+bestaudio/best'
+
+    if quality == config.QUALITY_LOW:
+        return 'bestvideo[height<=480]+bestaudio/best'
+
+    # 3. Extract numbers from the clean string.
+    # Example: we take "1080" from "1080p".
+    height_str = ''.join(filter(str.isdigit, quality))
+    if height_str:
+        return f'bestvideo[height<={height_str}]+bestaudio/best'
+
+    # 4. Fallback if something goes wrong.
     return 'bestvideo+bestaudio/best'
 
 class DownloadLogger:

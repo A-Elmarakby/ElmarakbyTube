@@ -177,3 +177,13 @@ QUALITY_BEST = "Best Quality"
 QUALITY_MEDIUM = "Medium"
 QUALITY_LOW = "Low"
 QUALITY_AUDIO = "Audio Only (MP3)"
+
+# ==========================================
+# 9. VIDEO QUALITY ENGINE SETTINGS
+# ==========================================
+
+# This number (0.10 = 10%) helps us fix weird YouTube numbers.
+# If a video size is 10% close to a standard size (like 720p or 1080p),
+# we "snap" it to that standard size.
+# If it is more than 10% different, we hide it from the user.
+SNAP_THRESHOLD = 0.10
