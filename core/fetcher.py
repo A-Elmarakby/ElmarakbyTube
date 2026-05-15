@@ -25,9 +25,15 @@ def _get_short_side(fmt: dict) -> int | None:
         return None
 
     try:
-        # Use float first, then round to the nearest whole integer.
-        # This fixes the flooring bug (Example: "719.9" rounds up to 720 instead of 719).
-        return min(round(float(w)), round(float(h)))
+        # Convert to float first, then round to the nearest whole integer.
+        width_val = round(float(w))
+        height_val = round(float(h))
+        
+        # Guard against zero or negative dimensions right at the source.
+        if width_val <= 0 or height_val <= 0:
+            return None
+            
+        return min(width_val, height_val)
     except (ValueError, TypeError):
         return None
 
