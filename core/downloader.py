@@ -13,7 +13,10 @@ def get_ydl_format_string(quality: str) -> str:
     """
     Change the quality string from the UI into a format that yt-dlp understands.
     """
-
+    # 0. Safety check: stop if the user did not choose a quality.
+    if quality == "Select Quality" or not quality.strip():
+        raise ValueError("You must select a video quality first.")
+    
     # 1. Check for Audio Only. This works for single videos and playlists.
     if "Audio Only" in quality:
         return 'bestaudio/best'

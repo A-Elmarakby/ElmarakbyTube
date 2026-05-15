@@ -16,30 +16,32 @@ STANDARD_RESOLUTIONS = [8640, 4320, 2160, 1440, 1080, 720, 480, 360, 240, 144]
 
 def _get_short_side(fmt: dict) -> int | None:
     """
-    Get the short side of the video format.
-    This fixes Vertical Videos (Shorts/Reels) where width and height are flipped.
-    Example: width=1080, height=1920 -> returns 1080.
+    Get the short side of the video format safely.
     """
     w = fmt.get('width')
     h = fmt.get('height')
 
-    # Ignore formats that have no dimension info.
     if not w or not h:
         return None
 
-    return min(w, h)
+    try:
+        # Force numbers to be integers to prevent crashes from text or decimals.
+        return min(int(w), int(h))
+    except (ValueError, TypeError):
+        return None
 
 def _snap_to_standard(short_side: int) -> int | None:
     """
     Check if the short_side is close to a standard resolution.
-    If yes, return the standard resolution. If no, return None.
     """
     for std in STANDARD_RESOLUTIONS:
-        # Check if the difference is inside our 10% threshold.
+        # Prevent dividing by zero if config is wrong.
+        if std <= 0:
+            continue
+            
         if abs(short_side - std) / std <= config.SNAP_THRESHOLD:
             return std
 
-    # The resolution is too weird. We discard it.
     return None
 
 def _extract_qualities(formats: list) -> list[str]:
