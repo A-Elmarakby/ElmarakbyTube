@@ -307,7 +307,8 @@ def _download_process(rows_to_download, quality, save_path):
             if state.download_event.is_set():
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = str(e)
-                app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
+                failed_font = ctk.CTkFont(family=messages.FONT_FAMILY, size=messages.FONT_SIZE_MAIN, underline=True)
+                app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
 
 def download_worker():
     if state.path_entry is None or state.quality_combo is None: return
@@ -421,7 +422,8 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             if not input_file:
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = "File not found in the save path."
-                app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
+                failed_font = ctk.CTkFont(family=messages.FONT_FAMILY, size=messages.FONT_SIZE_MAIN, underline=True)
+                app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
                 continue
             
             app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Converting...", text_color=config.COLOR_CYAN))
@@ -476,7 +478,8 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = str(e)
-                app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, cursor="hand2"))
+                failed_font = ctk.CTkFont(family=messages.FONT_FAMILY, size=messages.FONT_SIZE_MAIN, underline=True)
+                app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
                 
         if state.convert_event.is_set():
             failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
@@ -637,4 +640,3 @@ layout.build_app_ui(app, callbacks_dict)
 
 if __name__ == "__main__":
     app.mainloop()
-#delete me

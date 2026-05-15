@@ -80,4 +80,5 @@ def get_video_info(url):
             qualities.append(config.QUALITY_AUDIO)
             
         # 6. Return the clean data
+        qualities.insert(0, "Select Quality") # Add a default option at the beginning of the qualities list "Select Quality"
         return entries_data, qualities
