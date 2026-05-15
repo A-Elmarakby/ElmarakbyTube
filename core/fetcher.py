@@ -25,8 +25,9 @@ def _get_short_side(fmt: dict) -> int | None:
         return None
 
     try:
-        # Force numbers to be integers to prevent crashes from text or decimals.
-        return min(int(w), int(h))
+        # Use float first, then round to the nearest whole integer.
+        # This fixes the flooring bug (Example: "719.9" rounds up to 720 instead of 719).
+        return min(round(float(w)), round(float(h)))
     except (ValueError, TypeError):
         return None
 
