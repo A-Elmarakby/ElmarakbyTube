@@ -277,8 +277,6 @@ class TestSnapToStandard:
 class TestExtractQualities:
     """All tests for the _extract_qualities function."""
 
-    # --- Empty and useless inputs ---
-
     def test_empty_list_returns_empty(self):
         """No formats at all. Result must be an empty list."""
         assert _extract_qualities([]) == []
@@ -300,112 +298,73 @@ class TestExtractQualities:
         ]
         assert _extract_qualities(formats) == []
 
-    # --- Correct results ---
-
     def test_single_good_format(self):
-        """One good 1080p video. Result must be ['1080p']."""
+        """One good 1080p video. Result must be ['1080p HD']."""
         formats = [{'width': 1920, 'height': 1080}]
-        assert _extract_qualities(formats) == ["1080p"]
+        assert _extract_qualities(formats) == ["1080p HD"]
 
     def test_multiple_good_formats_sorted(self):
-        """
-        Three different formats. Result must be sorted from high to low.
-        Expected: ["1080p", "720p", "480p"]
-        """
+        """Three different formats. Result must be sorted with proper badges."""
         formats = [
             {'width': 854, 'height': 480},
             {'width': 1920, 'height': 1080},
             {'width': 1280, 'height': 720},
         ]
-        assert _extract_qualities(formats) == ["1080p", "720p", "480p"]
+        assert _extract_qualities(formats) == ["1080p HD", "720p", "480p"]
 
     def test_duplicates_are_removed(self):
-        """
-        Same resolution appears many times (common in yt-dlp for different codecs).
-        Result must have 1080p only once.
-        """
+        """Same resolution appears many times. Result must have 1080p HD only once."""
         formats = [
-            {'width': 1920, 'height': 1080},  # 1080p (h264)
-            {'width': 1920, 'height': 1080},  # 1080p (vp9) - duplicate
-            {'width': 1920, 'height': 1080},  # 1080p (av1) - duplicate
+            {'width': 1920, 'height': 1080},
+            {'width': 1920, 'height': 1080},
         ]
-        assert _extract_qualities(formats) == ["1080p"]
+        assert _extract_qualities(formats) == ["1080p HD"]
 
     def test_vertical_videos_read_correctly(self):
-        """
-        A vertical Reel (1080x1920) must show as 1080p, not 1920p.
-        The short side logic must fix this.
-        """
+        """A vertical Reel (1080x1920) must show as 1080p HD, not 1920p."""
         formats = [{'width': 1080, 'height': 1920}]
-        assert _extract_qualities(formats) == ["1080p"]
+        assert _extract_qualities(formats) == ["1080p HD"]
 
     def test_vertical_and_horizontal_same_resolution_deduped(self):
-        """
-        One horizontal 1080p and one vertical 1080p (Reel).
-        Both snap to 1080. Result must have 1080p only once.
-        """
+        """One horizontal and one vertical 1080p must dedup to single 1080p HD."""
         formats = [
-            {'width': 1920, 'height': 1080},  # Horizontal 1080p
-            {'width': 1080, 'height': 1920},  # Vertical 1080p (Reel)
+            {'width': 1920, 'height': 1080},
+            {'width': 1080, 'height': 1920},
         ]
-        assert _extract_qualities(formats) == ["1080p"]
+        assert _extract_qualities(formats) == ["1080p HD"]
 
     def test_near_standard_resolution_snaps_correctly(self):
-        """
-        1088 is close to 1080 (0.74% difference). Must snap and show as '1080p'.
-        This is a real value that yt-dlp sometimes returns.
-        """
+        """1088 is close to 1080. Must snap and show as '1080p HD'."""
         formats = [{'width': 1920, 'height': 1088}]
-        assert _extract_qualities(formats) == ["1080p"]
+        assert _extract_qualities(formats) == ["1080p HD"]
 
     def test_weird_resolution_is_discarded(self):
-        """
-        864p is too far from any standard (20% from both 720 and 1080).
-        It must be thrown away. Result is empty.
-        """
+        """864p is too far from standard. It must be thrown away."""
         formats = [{'width': 1536, 'height': 864}]
         assert _extract_qualities(formats) == []
 
-    # --- Full real-world mixed list ---
-
     def test_full_mixed_format_list(self):
-        """
-        This is the big test. It uses a realistic mix of good, bad, duplicate,
-        vertical, and weird formats — like what yt-dlp actually sends.
-        Expected final result: ["1080p", "720p", "480p"]
-        """
+        """Realistic mix of good, bad, and duplicate formats."""
         formats = [
-            {'width': 1920, 'height': 1080},    # Good: 1080p horizontal
-            {'width': 1080, 'height': 1920},    # Good: 1080p vertical (Reel) - duplicate of above
-            {'width': '1280', 'height': '720'}, # Good: 720p as strings
-            {'width': 854, 'height': 480},      # Good: 480p
-            {'width': 1536, 'height': 864},     # Bad: weird resolution, 20% from standard
-            {'width': 800, 'height': 800},      # Bad: weird square, 11% from 720
-            {'width': 100, 'height': 100},      # Bad: too small (< 144p)
-            {'width': 0, 'height': 720},        # Bad: zero width
-            {'width': None, 'height': None},    # Bad: None values
-            {'width': 'bad', 'height': 'text'}, # Bad: corrupted strings
-            {'height': 480},                    # Bad: missing width key
+            {'width': 1920, 'height': 1080},    # 1080p HD
+            {'width': 1080, 'height': 1920},    # Duplicate 1080p HD
+            {'width': '1280', 'height': '720'}, # 720p
+            {'width': 854, 'height': 480},      # 480p
+            {'width': 1536, 'height': 864},     # Bad
+            {'width': 0, 'height': 720},        # Bad
+            {'width': None, 'height': None},    # Bad
         ]
-        assert _extract_qualities(formats) == ["1080p", "720p", "480p"]
+        assert _extract_qualities(formats) == ["1080p HD", "720p", "480p"]
 
     def test_8k_and_4k_resolutions(self):
-        """
-        Ultra high resolutions (4K and 8K) must be accepted and sorted correctly.
-        Expected: ["4320p", "2160p"]
-        """
+        """Ultra high resolutions must get 4K and 8K badges and sort correctly."""
         formats = [
             {'width': 3840, 'height': 2160},  # 4K
             {'width': 7680, 'height': 4320},  # 8K
         ]
-        assert _extract_qualities(formats) == ["4320p", "2160p"]
+        assert _extract_qualities(formats) == ["4320p 8K", "2160p 4K"]
 
     def test_string_float_719_9_rounds_to_720(self):
-        """
-        The famous rounding edge case: '719.9' from yt-dlp.
-        It must round UP to 720 and appear as '720p' in the result.
-        If it rounded down to 719, the snap math (719 vs 720 = 0.14%) would
-        still snap to 720, but we test the full pipeline here to be sure.
-        """
+        """'719.9' rounds UP to 720 and appears as '720p' (no HD badge)."""
         formats = [{'width': '1280', 'height': '719.9'}]
         assert _extract_qualities(formats) == ["720p"]

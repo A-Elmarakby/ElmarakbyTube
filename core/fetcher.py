@@ -78,8 +78,22 @@ def _extract_qualities(formats: list) -> list[str]:
     # Sort the numbers from high to low.
     sorted_resolutions = sorted(list(accepted_resolutions), reverse=True)
     
-    # Return strings with 'p' (Example: ["1080p", "720p"]).
-    return [f"{res}p" for res in sorted_resolutions]
+    # Create a clean list with official YouTube badges (HD, 4K, 8K, 16K).
+    youtube_style_qualities = []
+    for res in sorted_resolutions:
+        if res >= 8640:
+            youtube_style_qualities.append(f"{res}p 16K")
+        elif res == 4320:
+            youtube_style_qualities.append(f"{res}p 8K")
+        elif res == 2160:
+            youtube_style_qualities.append(f"{res}p 4K")
+        elif res == 1440 or res == 1080:
+            youtube_style_qualities.append(f"{res}p HD")
+        else:
+            youtube_style_qualities.append(f"{res}p")
+            
+    return youtube_style_qualities
+    
 
 # ==========================================
 # MAIN FETCH FUNCTION
