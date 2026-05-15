@@ -70,12 +70,17 @@ class TestGetYdlFormatString:
         ("Best Quality",       "bestvideo+bestaudio/best"),
         ("Medium",             "bestvideo[height<=720]+bestaudio/best"),
         ("1080p",              "bestvideo[height<=1080]+bestaudio/best"),
-        ("Select Quality",     "bestvideo+bestaudio/best"),
     ])
     def test_get_ydl_format_string(self, quality_input, expected_format):
         # Import function from new place in downloader core
         from core.downloader import get_ydl_format_string
         assert get_ydl_format_string(quality_input) == expected_format
+
+    def test_get_ydl_format_string_raises_error_on_invalid(self):
+        # Test that "Select Quality" safely throws a ValueError.
+        from core.downloader import get_ydl_format_string
+        with pytest.raises(ValueError, match="You must select a video quality first."):
+            get_ydl_format_string("Select Quality")
 
 class TestBatchCalculationMath:
     @pytest.mark.parametrize("num_videos, max_threads, expected_batches", [
