@@ -5,6 +5,7 @@ Why we need it: To separate the UI drawing from the main logic.
 """
 
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog
 from PIL import Image
 
@@ -161,6 +162,40 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
     status_lbl.bind("<Button-1>", on_status_click)
 
 
+def setup_context_menu(entry_widget):
+    # Create a right-click menu with custom colors.
+    menu = tk.Menu(
+        entry_widget, 
+        tearoff=0, 
+        font=(messages.FONT_FAMILY, 10),
+        bg=config.MENU_BG_COLOR, 
+        fg=config.MENU_TEXT_COLOR,
+        activebackground=config.MENU_HOVER_COLOR,
+        activeforeground="white",
+        relief="flat",
+        bd=1
+    )
+    
+    def trigger_event(event_name):
+        # Click the box and run the action.
+        entry_widget.focus()
+        target = entry_widget._entry if hasattr(entry_widget, '_entry') else entry_widget
+        try:
+            target.event_generate(event_name)
+        except Exception:
+            pass
+
+    menu.add_command(label="Cut", command=lambda: trigger_event("<<Cut>>"))
+    menu.add_command(label="Copy", command=lambda: trigger_event("<<Copy>>"))
+    menu.add_command(label="Paste", command=lambda: trigger_event("<<Paste>>"))
+
+    def show_menu(event):
+        # Open the menu when the mouse clicks.
+        entry_widget.focus()
+        menu.tk_popup(event.x_root, event.y_root)
+
+    entry_widget.bind("<Button-3>", show_menu)
+
 # ==========================================
 # 2. Builder Functions
 # ==========================================
@@ -179,6 +214,7 @@ def _build_top_section(parent, callbacks):
     path_input_layout.pack(fill="x")
     state.path_entry = ctk.CTkEntry(path_input_layout, placeholder_text="/Downloads/Playlists...")
     state.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+    setup_context_menu(state.path_entry)
 
     def browse_save_path():
         folder_path = filedialog.askdirectory(title="Select Save Folder")
@@ -197,6 +233,7 @@ def _build_top_section(parent, callbacks):
     url_input_layout.pack(fill="x")
     state.url_entry = ctk.CTkEntry(url_input_layout, placeholder_text="Paste your YouTube link here...")
     state.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+    setup_context_menu(state.url_entry)
 
     # Search Button
     try:

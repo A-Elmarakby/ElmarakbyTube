@@ -45,6 +45,14 @@ COLOR_RED_HOVER = "#9A0007"
 COLOR_GREEN = "#398F3E"
 COLOR_GREEN_HOVER = "#183B19"
 
+# Right-click menu colors.
+# Background color for the menu box.
+MENU_BG_COLOR = "#2b2b2b"
+# Text color for the menu words.
+MENU_TEXT_COLOR = "white"
+# Color when you put mouse on a menu word.
+MENU_HOVER_COLOR = COLOR_CYAN
+
 # ==========================================
 # 3. SETTINGS: PERFORMANCE & ENGINE SETTINGS
 # ==========================================
