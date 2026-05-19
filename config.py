@@ -14,7 +14,7 @@ ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 APP_TITLE = "ElmarakbyTube Downloader"
 
 # The path to the app icon (logo).
-ICON_FILE = "assets/icon.ico"
+ICON_FILE = os.path.join(ASSETS_DIR, "icon.ico")
 
 # Default popup window size (width, height).
 POPUP_WIDTH = 450
@@ -126,12 +126,12 @@ def play_sound(sound_type="info"):
 # 6. ICONS & IMAGES (Paths to pictures)
 # ==========================================
 # Search button icon.
-SEARCH_ICON_PATH = "assets/search_icon.png" 
+SEARCH_ICON_PATH = os.path.join(ASSETS_DIR, "search_icon.png")
 SEARCH_ICON_SIZE = (15, 15)
 
 # Speed setting icons.
-SPEED_FAST_ICON_PATH = "assets/fast_icon.png"
-SPEED_SLOW_ICON_PATH = "assets/slow_icon.png"
+SPEED_FAST_ICON_PATH = os.path.join(ASSETS_DIR, "fast_icon.png")
+SPEED_SLOW_ICON_PATH = os.path.join(ASSETS_DIR, "slow_icon.png")
 SPEED_ICON_SIZE = (22, 22)
 
 # If image fails, use these emojis.
@@ -139,7 +139,7 @@ SPEED_FAST_FALLBACK_EMOJI = "🚀"
 SPEED_SLOW_FALLBACK_EMOJI = "🐢"
 
 # Contact button icon.
-CONTACT_ICON_PATH = "assets/chat_icon.png" 
+CONTACT_ICON_PATH = os.path.join(ASSETS_DIR, "chat_icon.png") 
 CONTACT_ICON_SIZE = (22, 22)        
 
 # ==========================================
