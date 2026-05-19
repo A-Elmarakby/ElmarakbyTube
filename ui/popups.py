@@ -155,8 +155,8 @@ def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
     
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
 
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True)).pack(side="left", padx=10)
     ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_NO), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res(False)).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True)).pack(side="left", padx=10)
     
     dialog.wait_window()
     return result[0]
@@ -247,8 +247,8 @@ def ask_conversion_speed(parent_window=None):
     except Exception:
         slow_btn_kwargs["text"] = apply_bidi(f"{messages.BTN_SLOW} {config.SPEED_SLOW_FALLBACK_EMOJI}")
 
-    ctk.CTkButton(btn_frame, **fast_btn_kwargs).pack(side="left", padx=15)
     ctk.CTkButton(btn_frame, **slow_btn_kwargs).pack(side="left", padx=15)
+    ctk.CTkButton(btn_frame, **fast_btn_kwargs).pack(side="left", padx=15)
     
     dialog.wait_window()
     return result[0]
@@ -308,8 +308,8 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     btn_frame.pack()
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay")).pack(side="left", padx=10)
     ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=big_btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, width=110, height=30, command=lambda: set_res("leave")).pack(side="left", padx=10)
+    ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay")).pack(side="left", padx=10)
     dialog.wait_window()
     return result[0]
 
