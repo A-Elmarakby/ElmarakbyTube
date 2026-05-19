@@ -92,8 +92,17 @@ def download_single_video(url, title, save_path, quality, progress_callback, is_
             # Tell UI we are done
             progress_callback('finished', 1.0, 0)
 
+    # Clean quality string (e.g., "Audio Only (MP3)" -> "Audio_Only_MP3")
+    clean_quality = quality.replace(" ", "_").replace("(", "").replace(")", "")
+    
+    # Get short app name ("ElmarakbyTube Downloader" -> "ElmarakbyTube")
+    app_name = config.APP_TITLE.split()[0]
+    
+    # Build safe output name. We cut the title length to prevent Windows crashes.
+    dynamic_outtmpl = os.path.join(save_path, f'%(title).{config.MAX_VIDEO_TITLE_LENGTH}s [{app_name}-{clean_quality}].%(ext)s')
+
     ydl_opts = {
-        'outtmpl': os.path.join(save_path, '%(title)s.%(ext)s'),
+        'outtmpl': dynamic_outtmpl,
         'format': format_str,
         'progress_hooks': [yt_dlp_hook],
         'noplaylist': True,

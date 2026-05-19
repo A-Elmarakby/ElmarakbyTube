@@ -21,6 +21,16 @@ POPUP_WIDTH = 450
 POPUP_HEIGHT = 200
 
 # ==========================================
+# WINDOWS LONG PATH FIX (260 CHARACTERS LIMIT)
+# ==========================================
+# Windows cannot save files if the full folder path + file name is more than 260 letters.
+# If a YouTube video has a very long name, the download will fail.
+# So, we cut the video name to this safe number of letters.
+# This is the maximum number of letters allowed from the video name.
+# We cut long names to this size so the download does not fail.
+MAX_VIDEO_TITLE_LENGTH = 100
+
+# ==========================================
 # 2. COLORS (App look and feel)
 # ==========================================
 # Main colors.
