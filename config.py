@@ -1,6 +1,12 @@
 import os
 import sys
 
+# Get the full path of the folder containing config.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Build the main assets folder path dynamically
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+
 # ==========================================
 # 1. GENERAL APP SETTINGS
 # ==========================================
@@ -72,14 +78,14 @@ USER_DATA_SAVE_DIR = ""
 # Play a sound when a task finishes successfully? (True = Yes, False = No)
 PLAY_SUCCESS_SOUND = True
 
-# Type of sound to play on success ("success", "info", "warning", "error")
-SUCCESS_SOUND_TYPE = "success"
+# Source of the sounds ("windows" or "custom")
+SOUND_SOURCE = "custom"
 
-# Source of the success sound ("windows" or "custom")
-SUCCESS_SOUND_SOURCE = "windows"
-
-# If source is "custom", type the path to your .wav file (e.g., "sounds/success.wav")
-CUSTOM_SUCCESS_SOUND_PATH = "success.wav"
+# Paths to your custom .wav files (used if SOUND_SOURCE is "custom")
+CUSTOM_SUCCESS_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Success.wav")
+CUSTOM_ERROR_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Error.wav")
+CUSTOM_WARNING_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Warning.wav")
+CUSTOM_INFO_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Info.wav")
 
 def play_sound(sound_type="info"):
     """Plays system or custom sounds based on event type safely cross-platform"""
@@ -88,19 +94,32 @@ def play_sound(sound_type="info"):
         return # Skip sound on Mac/Linux to prevent crashes
 
     import winsound # Import here safely
+    
     if sound_type == "success":
         if not PLAY_SUCCESS_SOUND:
             return 
-        if SUCCESS_SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_SUCCESS_SOUND_PATH):
+        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_SUCCESS_SOUND_PATH):
             winsound.PlaySound(CUSTOM_SUCCESS_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
             winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            
     elif sound_type == "error":
-        winsound.MessageBeep(winsound.MB_ICONHAND)
+        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_ERROR_SOUND_PATH):
+            winsound.PlaySound(CUSTOM_ERROR_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            winsound.MessageBeep(winsound.MB_ICONHAND)
+            
     elif sound_type == "warning":
-        winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-    else:
-        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_WARNING_SOUND_PATH):
+            winsound.PlaySound(CUSTOM_WARNING_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            
+    else: # Default is "info"
+        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_INFO_SOUND_PATH):
+            winsound.PlaySound(CUSTOM_INFO_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
 
 
 # ==========================================
