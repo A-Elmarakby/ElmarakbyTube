@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import webbrowser
+import re
 from PIL import Image
 
 import config
@@ -61,6 +62,10 @@ def center_toplevel(top, width, height, parent_window=None):
 # ==========================================
 
 def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_height=None):
+    # Sanitize message: Remove terminal ANSI color codes before displaying in UI
+    if isinstance(message, str):
+        message = re.sub(r'\x1b\[[0-9;]*m', '', message)
+
     if parent_window is None:
         import __main__
         if hasattr(__main__, 'app'):
