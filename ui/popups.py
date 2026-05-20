@@ -172,7 +172,8 @@ def custom_alert_dialog(title, message, parent_window=None):
     
     add_dialog_icon(alert_dlg)
     
-    center_toplevel(alert_dlg, 400, 160, parent_window)
+    # Make window taller (220) so long text is not cut
+    center_toplevel(alert_dlg, 400, 220, parent_window)
     alert_dlg.transient(parent_window)
     alert_dlg.grab_set()
     
@@ -181,7 +182,8 @@ def custom_alert_dialog(title, message, parent_window=None):
     
     lbl = ctk.CTkLabel(alert_dlg, text=apply_bidi(message), font=btn_font, wraplength=350)
     lbl.pack(pady=(30, 20))
-    ctk.CTkButton(alert_dlg, text="OK", font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy).pack()
+    # Use Arabic OK button from messages
+    ctk.CTkButton(alert_dlg, text=apply_bidi(messages.BTN_OK), font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy).pack()
     alert_dlg.wait_window()
 
 
@@ -314,16 +316,32 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     return result[0]
 
 def is_valid_name(name):
-    name = name.strip()
-    if not name: return False, messages.MSG_NAME_REQUIRED
-    if len(name) < config.NAME_MIN_LENGTH or len(name) > config.NAME_MAX_LENGTH: return False, messages.MSG_INVALID_NAME
-    if not config.NAME_ALLOW_NUMBERS and any(char.isdigit() for char in name): return False, messages.MSG_INVALID_NAME
+    # Remove extra spaces and make letters small for checking
+    clean_name = re.sub(r"\s+", " ", name.strip().lower())
+    
+    if not clean_name: return False, messages.MSG_NAME_REQUIRED
+
+    # Safe regex pattern to catch refusal words without blocking real names
+    reject_pattern = (
+        r"^(لا+|لأ+|لاء+|no+|n+|nn+|nah|nope|cancel|skip( it)?|gh+|hg|la+)$|"
+        r"^(مش|يا عم|يعم|لا يا عم)(\s|$)|"
+        r"^(مش |يا عم |يعم |لا يا عم )(عايز|عاوز|لا|هقول|قايل|مهتم|فارق|مهم|دعوه|فكك|طنش|سر|مجهول|ماشي).*|"
+        r"^(فكك|طنش|سر|مجهول|ولا حاجة|اي حاجة|ولا يهمك|براحتي|ماشي)$"
+    )
+    
+    # Return custom rejected message if it matches the pattern
+    if re.match(reject_pattern, clean_name):
+        return False, messages.MSG_NAME_REJECTED
+
+    if len(clean_name) < config.NAME_MIN_LENGTH or len(clean_name) > config.NAME_MAX_LENGTH: return False, messages.MSG_INVALID_NAME
+    if not config.NAME_ALLOW_NUMBERS and any(char.isdigit() for char in clean_name): return False, messages.MSG_INVALID_NAME
     if not config.NAME_ALLOW_SYMBOLS:
-        if not name.replace(" ", "").isalpha(): return False, messages.MSG_INVALID_NAME
+        if not clean_name.replace(" ", "").isalpha(): return False, messages.MSG_INVALID_NAME
     if config.NAME_MAX_REPEATS > 0:
-        for i in range(len(name) - config.NAME_MAX_REPEATS):
-            chunk = name[i : i + config.NAME_MAX_REPEATS + 1]
+        for i in range(len(clean_name) - config.NAME_MAX_REPEATS):
+            chunk = clean_name[i : i + config.NAME_MAX_REPEATS + 1]
             if len(set(chunk)) == 1 and chunk[0] != " ": return False, messages.MSG_INVALID_NAME
+            
     return True, ""
 
 def show_welcome_onboarding(parent_window=None):
