@@ -14,7 +14,7 @@ from PIL import Image
 
 import config
 import messages
-from core.utils import apply_bidi
+from core.utils import apply_bidi, load_user_data, update_user_data
 
 # ==========================================
 # UI Helpers & Smart Icon Loader
@@ -364,19 +364,9 @@ def show_welcome_onboarding(parent_window=None):
         if hasattr(__main__, 'app'):
             parent_window = __main__.app
 
-    if config.USER_DATA_SAVE_DIR.strip():
-        base_dir = config.USER_DATA_SAVE_DIR
-    else:
-        appdata = os.getenv('APPDATA')
-        if appdata: base_dir = os.path.join(appdata, "ElmarakbyTube")
-        else:
-            if getattr(sys, 'frozen', False): base_dir = os.path.dirname(sys.executable)
-            else: base_dir = os.path.dirname(os.path.abspath(__file__))
-            
-    os.makedirs(base_dir, exist_ok=True)
-    data_file = os.path.join(base_dir, config.USER_DATA_FILE_NAME)
-    
-    if os.path.exists(data_file): return
+    # Check if the user already provided their name
+    if "name" in load_user_data():
+        return
 
     dialog = ctk.CTkToplevel(parent_window)
     dialog.title(messages.TITLE_WELCOME)
@@ -407,8 +397,8 @@ def show_welcome_onboarding(parent_window=None):
         name = name_entry.get().strip()
         is_valid, error_msg = is_valid_name(name)
         if is_valid:
-            with open(data_file, "w", encoding="utf-8") as f:
-                json.dump({"name": name}, f)
+            # Safely save the name without overwriting other future settings
+            update_user_data("name", name)
             dialog.destroy()
             
             first_name = name.split()[0]
