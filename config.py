@@ -90,6 +90,9 @@ USER_DATA_FILE_NAME = "user_data.json"
 # Leave it empty "" to save it safely inside Windows AppData.
 USER_DATA_SAVE_DIR = ""
 
+# Threshold size in gigabytes to trigger the package warning popup in GB
+DATA_WARNING_LIMIT_THRESHOLD_GB = 0.1
+
 # ==========================================
 # 5. SYSTEM SOUNDS (Beeps and alerts)
 # ==========================================
@@ -104,6 +107,7 @@ CUSTOM_SUCCESS_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Success.wav")
 CUSTOM_ERROR_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Error.wav")
 CUSTOM_WARNING_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Warning.wav")
 CUSTOM_INFO_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Info.wav")
+CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "DataWarning.wav")
 
 def play_sound(sound_type="info"):
     """Plays system or custom sounds based on event type safely cross-platform"""
@@ -131,6 +135,13 @@ def play_sound(sound_type="info"):
         if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_WARNING_SOUND_PATH):
             winsound.PlaySound(CUSTOM_WARNING_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            
+    elif sound_type == "data_warning":
+        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH):
+            winsound.PlaySound(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            # Fallback to a distinct system warning sound if file is missing
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             
     else: # Default is "info"

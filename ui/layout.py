@@ -11,10 +11,9 @@ from PIL import Image
 
 import config
 import messages
-from core.utils import apply_bidi, format_size
+from core.utils import apply_bidi, format_size, load_user_data
 import ui.state as state
-from ui.popups import custom_msg_box
-
+from ui.popups import custom_msg_box, show_1gb_warning_dialog
 
 # ==========================================
 # 1. UI Helper Functions
@@ -74,6 +73,17 @@ def update_dynamic_totals():
         size_text += "+"
     if state.total_size_label and state.total_size_label.winfo_exists():
         state.total_size_label.configure(text=size_text)
+
+    # Convert the configured threshold from GB to bytes dynamically
+    threshold_bytes = config.DATA_WARNING_LIMIT_THRESHOLD_GB * 1024 * 1024 * 1024
+    if total_bytes > threshold_bytes and not state.has_warned_1gb:
+        # Lock the gate in RAM to prevent multiple triggers in the same session
+        state.has_warned_1gb = True
+        
+        # Check user preferences from the hard drive only once
+        user_data = load_user_data()
+        if not user_data.get("hide_1gb_warning", False):
+            show_1gb_warning_dialog()
 
 def toggle_all(is_checked):
     # Check or uncheck all boxes

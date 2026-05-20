@@ -9,6 +9,7 @@ import threading
 # --- Shared Data ---
 video_rows = []           # List of all video row dictionaries
 consecutive_errors = 0    # Counts consecutive YouTube fetch errors
+has_warned_1gb = False    # Tracks if the 1GB warning was triggered in this session
 
 # --- Threading Locks & Events ---
 operation_lock = threading.Lock()   # Prevents overlapping operations

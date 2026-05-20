@@ -420,3 +420,41 @@ def show_welcome_onboarding(parent_window=None):
             custom_alert_dialog(messages.TITLE_ALERT, error_msg, parent_window)
             
     ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONFIRM_NAME), font=btn_font, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name).pack(pady=10)
+
+
+def show_1gb_warning_dialog(parent_window=None):
+    if parent_window is None:
+        import __main__
+        if hasattr(__main__, 'app'):
+            parent_window = __main__.app
+
+    dialog = ctk.CTkToplevel(parent_window)
+    dialog.title(apply_bidi(messages.TITLE_1GB_WARNING))
+    
+    add_dialog_icon(dialog)
+    
+    center_toplevel(dialog, 400, 220, parent_window)
+    dialog.transient(parent_window)
+    dialog.grab_set()
+    
+    # Play the dedicated data warning audio type configured in config
+    config.play_sound("data_warning")
+    
+    # Show the funny message
+    lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_1GB_WARNING), font=(messages.FONT_FAMILY, messages.FONT_SIZE_LARGE, "bold"), wraplength=350, justify="center")
+    lbl.pack(pady=(20, 15))
+    
+    # Checkbox for opt-out preference
+    chk = ctk.CTkCheckBox(dialog, text=apply_bidi(messages.CHK_DONT_SHOW), font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN), checkbox_height=20, checkbox_width=20)
+    chk.pack(pady=(0, 15))
+    
+    def on_continue():
+        # Save choice to hard drive if user checked the box (1 means checked)
+        if chk.get() == 1:
+            update_user_data("hide_1gb_warning", True)
+        dialog.destroy()
+
+    btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
+    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONTINUE), font=btn_font, fg_color="#28a745", hover_color="#218838", width=120, command=on_continue).pack()
+    
+    dialog.wait_window()

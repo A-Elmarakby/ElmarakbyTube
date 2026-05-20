@@ -74,6 +74,12 @@ MSG_KEEP_DL_CANCEL_CONV = "في تحميل شغال دلوقتي.\nتحب نكم
 # A job is already running.
 MSG_OPERATION_RUNNING = "⏳ في عملية شغالة دلوقتي، استنى شوية "
 
+# 1GB Warning Dialog
+TITLE_1GB_WARNING = "تحذير الباقة ⚠️"
+MSG_1GB_WARNING = "معلومة على السريع \nإجمالي الفيديوهات عدى الـ 1 جيجا!\nخد بالك، باقة الإنترنت هتزعل منك."
+CHK_DONT_SHOW = "ماتظهرليش الرسالة دي تاني"
+BTN_CONTINUE = "تمام، كمل"
+
 # ------------------------------------------
 # 5. Welcome Screen (Onboarding)
 # ------------------------------------------
