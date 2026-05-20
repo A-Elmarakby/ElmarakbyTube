@@ -172,8 +172,16 @@ def custom_alert_dialog(title, message, parent_window=None):
     
     add_dialog_icon(alert_dlg)
     
-    # Make window taller (220) so long text is not cut
-    center_toplevel(alert_dlg, 400, 220, parent_window)
+    # --- SMART DYNAMIC HEIGHT CALCULATION ---
+    # Count lines based on new lines (\n) or total text length
+    new_lines = message.count('\n')
+    wrapped_lines = len(message) // 40  # assume each line is about 40 characters
+    estimated_lines = max(new_lines, wrapped_lines) + 1
+    
+    # Base height is 130, and add 25 for each extra line, minimum 160 for short text
+    dynamic_height = max(160, 130 + (estimated_lines * 25))
+    
+    center_toplevel(alert_dlg, 400, dynamic_height, parent_window)
     alert_dlg.transient(parent_window)
     alert_dlg.grab_set()
     
@@ -182,8 +190,14 @@ def custom_alert_dialog(title, message, parent_window=None):
     
     lbl = ctk.CTkLabel(alert_dlg, text=apply_bidi(message), font=btn_font, wraplength=350)
     lbl.pack(pady=(30, 20))
+    
     # Use Arabic OK button from messages
-    ctk.CTkButton(alert_dlg, text=apply_bidi(messages.BTN_OK), font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy).pack()
+    try:
+        ok_text = apply_bidi(messages.BTN_OK)
+    except Exception:
+        ok_text = "OK"
+        
+    ctk.CTkButton(alert_dlg, text=ok_text, font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy).pack()
     alert_dlg.wait_window()
 
 
