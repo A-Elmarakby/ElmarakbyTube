@@ -91,7 +91,7 @@ USER_DATA_FILE_NAME = "user_data.json"
 USER_DATA_SAVE_DIR = ""
 
 # Threshold size in gigabytes to trigger the package warning popup in GB
-DATA_WARNING_LIMIT_THRESHOLD_GB = 1
+DATA_WARNING_LIMIT_THRESHOLD_GB = 1.0
 
 # ==========================================
 # 5. SYSTEM SOUNDS (Beeps and alerts)

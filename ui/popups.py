@@ -19,6 +19,20 @@ from core.utils import apply_bidi, load_user_data, update_user_data
 # ==========================================
 # UI Helpers & Smart Icon Loader
 # ==========================================
+def add_focus_visuals(*buttons):
+    """
+    Changes the button color to its hover state when focused via Tab key.
+    This creates a clear visual cue for keyboard navigation.
+    """
+    for btn in buttons:
+        orig_color = btn.cget("fg_color")
+        hover_color = btn.cget("hover_color")
+        
+        # When Tab focuses the button, make it look hovered
+        btn.bind("<FocusIn>", lambda e, b=btn, hc=hover_color: b.configure(fg_color=hc))
+        # When Tab leaves the button, revert to normal
+        btn.bind("<FocusOut>", lambda e, b=btn, oc=orig_color: b.configure(fg_color=oc))
+
 
 def add_dialog_icon(dialog):
     """
@@ -110,7 +124,15 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
     lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400, justify="center")
     lbl_msg.pack(pady=(0, 20), padx=20)
     
-    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy).pack(pady=(0, 20))
+    btn_ok = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy)
+    btn_ok.pack(pady=(0, 20))
+    
+    # Enter maps to the button's command, Escape maps explicitly to destroy
+    dialog.bind("<Return>", lambda event: btn_ok.invoke())
+    dialog.bind("<KP_Enter>", lambda event: btn_ok.invoke())
+    dialog.bind("<Escape>", lambda event: dialog.destroy())
+    
+    btn_ok.focus()
     dialog.wait_window()
 
 def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
@@ -155,8 +177,17 @@ def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
     
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN + 2, "bold")
 
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_NO), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res(False)).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True)).pack(side="left", padx=10)
+    btn_no = ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_NO), font=big_btn_font, fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, width=110, height=30, command=lambda: set_res(False))
+    btn_no.pack(side="left", padx=10)
+    
+    btn_yes = ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True))
+    btn_yes.pack(side="left", padx=10)
+    
+    # Escape always cancels (Safe exit)
+    dialog.bind("<Escape>", lambda event: set_res(False))
+    
+    # Disable Tab key navigation completely to prevent accidental selections
+    dialog.bind("<Tab>", lambda event: "break")
     
     dialog.wait_window()
     return result[0]
@@ -197,7 +228,15 @@ def custom_alert_dialog(title, message, parent_window=None):
     except Exception:
         ok_text = "OK"
         
-    ctk.CTkButton(alert_dlg, text=ok_text, font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy).pack()
+    btn_ok = ctk.CTkButton(alert_dlg, text=ok_text, font=btn_font, fg_color="#555", hover_color="#333", width=80, command=alert_dlg.destroy)
+    btn_ok.pack()
+    
+    # Enter maps to the button's command, Escape maps explicitly to destroy
+    alert_dlg.bind("<Return>", lambda event: btn_ok.invoke())
+    alert_dlg.bind("<KP_Enter>", lambda event: btn_ok.invoke())
+    alert_dlg.bind("<Escape>", lambda event: alert_dlg.destroy())
+    
+    btn_ok.focus()
     alert_dlg.wait_window()
 
 
@@ -263,8 +302,17 @@ def ask_conversion_speed(parent_window=None):
     except Exception:
         slow_btn_kwargs["text"] = apply_bidi(f"{messages.BTN_SLOW} {config.SPEED_SLOW_FALLBACK_EMOJI}")
 
-    ctk.CTkButton(btn_frame, **slow_btn_kwargs).pack(side="left", padx=15)
-    ctk.CTkButton(btn_frame, **fast_btn_kwargs).pack(side="left", padx=15)
+    btn_slow = ctk.CTkButton(btn_frame, **slow_btn_kwargs)
+    btn_slow.pack(side="left", padx=15)
+    
+    btn_fast = ctk.CTkButton(btn_frame, **fast_btn_kwargs)
+    btn_fast.pack(side="left", padx=15)
+    
+    # Escape always cancels (Safe exit)
+    dialog.bind("<Escape>", lambda event: set_res("cancel"))
+    
+    # Disable Tab key navigation completely to prevent accidental selections
+    dialog.bind("<Tab>", lambda event: "break")
     
     dialog.wait_window()
     return result[0]
@@ -324,8 +372,18 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     btn_frame.pack()
     big_btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=big_btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, width=110, height=30, command=lambda: set_res("leave")).pack(side="left", padx=10)
-    ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay")).pack(side="left", padx=10)
+    btn_leave = ctk.CTkButton(btn_frame, text=apply_bidi(red_text), font=big_btn_font, fg_color=config.EXIT_LEAVE_COLOR, hover_color=config.EXIT_LEAVE_HOVER, width=110, height=30, command=lambda: set_res("leave"))
+    btn_leave.pack(side="left", padx=10)
+    
+    btn_stay = ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay"))
+    btn_stay.pack(side="left", padx=10)
+    
+    # Escape always stays safely in the app (Safe exit)
+    dialog.bind("<Escape>", lambda event: set_res("stay"))
+    
+    # Disable Tab key navigation completely to prevent accidental selections
+    dialog.bind("<Tab>", lambda event: "break")
+    
     dialog.wait_window()
     return result[0]
 
@@ -415,11 +473,26 @@ def show_welcome_onboarding(parent_window=None):
             
             config.play_sound("success")
             ctk.CTkLabel(greet_dialog, text=apply_bidi(greet_msg), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY, "bold")).pack(pady=40, padx=20)
-            ctk.CTkButton(greet_dialog, text=apply_bidi(messages.WELCOME_BTN), font=btn_font, fg_color=config.WELCOME_BTN_COLOR, hover=True, hover_color=config.WELCOME_BTN_HOVER, width=config.WELCOME_BTN_WIDTH, command=greet_dialog.destroy).pack()
+            btn_welcome = ctk.CTkButton(greet_dialog, text=apply_bidi(messages.WELCOME_BTN), font=btn_font, fg_color=config.WELCOME_BTN_COLOR, hover=True, hover_color=config.WELCOME_BTN_HOVER, width=config.WELCOME_BTN_WIDTH, command=greet_dialog.destroy)
+            btn_welcome.pack()
+            
+            greet_dialog.bind("<Return>", lambda event: greet_dialog.destroy())
+            greet_dialog.bind("<KP_Enter>", lambda event: greet_dialog.destroy())
+            greet_dialog.bind("<Escape>", lambda event: greet_dialog.destroy())
+            
+            btn_welcome.focus()
         else:
             custom_alert_dialog(messages.TITLE_ALERT, error_msg, parent_window)
             
-    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONFIRM_NAME), font=btn_font, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name).pack(pady=10)
+    btn_confirm = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONFIRM_NAME), font=btn_font, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name)
+    btn_confirm.pack(pady=10)
+
+    # Keyboard shortcuts to save the name instantly
+    dialog.bind("<Return>", lambda event: save_name())
+    dialog.bind("<KP_Enter>", lambda event: save_name())
+    
+    # Make typing start immediately when window opens
+    name_entry.focus()
 
 
 def show_1gb_warning_dialog(parent_window=None):
@@ -455,6 +528,13 @@ def show_1gb_warning_dialog(parent_window=None):
         dialog.destroy()
 
     btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
-    ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONTINUE), font=btn_font, fg_color="#28a745", hover_color="#218838", width=120, command=on_continue).pack()
+    btn_continue = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONTINUE), font=btn_font, fg_color="#28a745", hover_color="#218838", width=120, command=on_continue)
+    btn_continue.pack()
     
+    # Enter triggers the main button's command, Escape closes without saving
+    dialog.bind("<Return>", lambda event: btn_continue.invoke())
+    dialog.bind("<KP_Enter>", lambda event: btn_continue.invoke())
+    dialog.bind("<Escape>", lambda event: dialog.destroy())
+    
+    btn_continue.focus()
     dialog.wait_window()
