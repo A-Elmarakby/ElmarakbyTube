@@ -108,6 +108,7 @@ CUSTOM_ERROR_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Error.wav")
 CUSTOM_WARNING_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Warning.wav")
 CUSTOM_INFO_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Info.wav")
 CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "DataWarning.wav")
+CUSTOM_EXIT_SOUND_PATH = os.path.join(ASSETS_DIR, "sounds", "Exit.wav")
 
 def play_sound(sound_type="info"):
     """Plays system or custom sounds based on event type safely cross-platform"""
@@ -141,8 +142,18 @@ def play_sound(sound_type="info"):
         if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH):
             winsound.PlaySound(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
-            # Fallback to a distinct system warning sound if file is missing
+            # Play default sound if file is missing
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            
+    elif sound_type == "exit":
+        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_EXIT_SOUND_PATH):
+            # Play custom exit sound and wait for it to finish
+            winsound.PlaySound(CUSTOM_EXIT_SOUND_PATH, winsound.SND_FILENAME)
+        else:
+            # Create a shutdown melody (3 notes going down)
+            winsound.Beep(800, 150) # High note
+            winsound.Beep(600, 150) # Middle note
+            winsound.Beep(400, 250) # Low note
             
     else: # Default is "info"
         if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_INFO_SOUND_PATH):

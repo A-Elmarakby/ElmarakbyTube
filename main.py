@@ -607,14 +607,35 @@ def _force_kill_all_background_processes():
 def on_closing():
     choice = v2_exit_dialog(messages.TITLE_EXIT, messages.MSG_EXIT_ASK, messages.BTN_STAY, messages.BTN_LEAVE, app)
     if choice == "leave":
-        if state.download_event.is_set() or state.convert_event.is_set() or state.fetch_event.is_set():
+        jobs_running = state.download_event.is_set() or state.convert_event.is_set() or state.fetch_event.is_set()
+        
+        if jobs_running:
             warn_choice = v2_exit_dialog(messages.TITLE_EXIT_WARN, messages.MSG_EXIT_WARN, messages.BTN_WAIT, messages.BTN_FORCE_QUIT, app)
-            if warn_choice == "leave":
-                _force_kill_all_background_processes() 
-                app.destroy()
-        else:
-            _force_kill_all_background_processes() 
-            app.destroy()
+            if warn_choice != "leave":
+                return # User canceled exit
+
+        # 1. Hide the window fast for better response feeling
+        app.withdraw()
+
+        # 2. Parallel shutdown manager
+        def shutdown_manager():
+            # Create one thread for sound and one thread for cleanup
+            sound_thread = threading.Thread(target=lambda: config.play_sound("exit"))
+            cleanup_thread = threading.Thread(target=_force_kill_all_background_processes)
+
+            # Start both tasks at the same time
+            sound_thread.start()
+            cleanup_thread.start()
+
+            # Wait until both tasks finish 100%
+            sound_thread.join()
+            cleanup_thread.join()
+
+            # 3. Close the app safely from the Main Thread
+            app.after(0, app.destroy)
+
+        # Run the manager in background to stop freezing
+        threading.Thread(target=shutdown_manager, daemon=True).start()
 
 app.protocol("WM_DELETE_WINDOW", on_closing)
 
