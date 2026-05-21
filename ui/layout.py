@@ -15,6 +15,9 @@ from core.utils import apply_bidi, format_size, load_user_data
 import ui.state as state
 from ui.popups import custom_msg_box, show_1gb_warning_dialog
 
+# Pre-calculate bytes once when layout is imported to save CPU cycles
+DATA_WARNING_LIMIT_BYTES = config.DATA_WARNING_LIMIT_THRESHOLD_GB * 1024 * 1024 * 1024
+
 # ==========================================
 # 1. UI Helper Functions
 # ==========================================
@@ -74,9 +77,8 @@ def update_dynamic_totals():
     if state.total_size_label and state.total_size_label.winfo_exists():
         state.total_size_label.configure(text=size_text)
 
-    # Convert the configured threshold from GB to bytes dynamically
-    threshold_bytes = config.DATA_WARNING_LIMIT_THRESHOLD_GB * 1024 * 1024 * 1024
-    if total_bytes > threshold_bytes and not state.has_warned_1gb:
+    # Check RAM gate first (Short-Circuit), then check the pre-calculated size
+    if not state.has_warned_1gb and total_bytes > DATA_WARNING_LIMIT_BYTES:
         # Lock the gate in RAM to prevent multiple triggers in the same session
         state.has_warned_1gb = True
         
