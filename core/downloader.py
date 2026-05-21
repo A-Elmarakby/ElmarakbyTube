@@ -8,6 +8,7 @@ import os
 import yt_dlp
 import imageio_ffmpeg
 import config
+import logging
 
 def get_ydl_format_string(quality: str) -> str:
     """
@@ -47,14 +48,22 @@ class DownloadLogger:
         
     def debug(self, msg):
         if config.SHOW_TERMINAL_LOGS: print(msg)
+        
+        # Catch yt-dlp retries and network drops (they are sent as debug messages)
+        msg_lower = msg.lower()
+        if "retrying" in msg_lower or "giving up" in msg_lower:
+            logging.warning(f"[yt-dlp Network Drop] {msg}")
+
         # If yt-dlp says it is already downloaded, tell the main file using the walkie-talkie
         if "has already been downloaded" in msg or "already exists" in msg:
             self.callback('already_exists', 1.0, 0)
             
     def warning(self, msg): 
+        logging.warning(f"[yt-dlp] {msg}") # Save to file
         if config.SHOW_TERMINAL_LOGS: print(msg)
         
     def error(self, msg): 
+        logging.error(f"[yt-dlp] {msg}") # Save to file
         if config.SHOW_TERMINAL_LOGS: print(msg)
 
 def download_single_video(url, title, save_path, quality, progress_callback, is_cancelled):

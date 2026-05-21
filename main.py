@@ -3,30 +3,49 @@ File: main.py
 What it does: The main brain of the app. Connects logic (core) with UI (layout).
 """
 
-import customtkinter as ctk
-import yt_dlp
-import threading
 import os
-import glob
-import concurrent.futures
+import sys
+import logging
 
-import config
-import messages
-from core.fetcher import get_video_info
-from core.downloader import download_single_video, get_ydl_format_string
-from core.converter import convert_single_file
-from core.utils import format_size
-from yt_dlp.utils import sanitize_filename
+# 1. Start logger FIRST (Before importing anything else to catch missing files)
+try:
+    from core.utils import setup_logger
+    setup_logger()
+except Exception as e:
+    # Absolute fallback if utils.py itself is missing
+    logging.basicConfig(filename="Emergency_Crash.log", level=logging.CRITICAL)
+    logging.critical("FATAL ERROR: Could not load core tools!", exc_info=True)
+    sys.exit(1)
 
-import ui.state as state
-from ui.popups import custom_msg_box, custom_ask_yes_no, ask_conversion_speed, show_contact_popup, v2_exit_dialog, show_welcome_onboarding
-import ui.layout as layout
+# 2. Safely import the rest of the application
+try:
+    import customtkinter as ctk
+    import yt_dlp
+    import threading
+    import glob
+    import concurrent.futures
 
-# Keep UI functions available in main namespace to prevent breaking existing tests
-from ui.layout import (
-    safe_ui_update, safe_progress_update, update_global_status, 
-    update_dynamic_totals, toggle_all, remove_selected, clear_list, add_video_row
-)
+    import config
+    import messages
+    from core.fetcher import get_video_info
+    from core.downloader import download_single_video, get_ydl_format_string
+    from core.converter import convert_single_file
+    from core.utils import format_size
+    from yt_dlp.utils import sanitize_filename
+
+    import ui.state as state
+    from ui.popups import custom_msg_box, custom_ask_yes_no, ask_conversion_speed, show_contact_popup, v2_exit_dialog, show_welcome_onboarding
+    import ui.layout as layout
+
+    # Keep UI functions available in main namespace
+    from ui.layout import (
+        safe_ui_update, safe_progress_update, update_global_status, 
+        update_dynamic_totals, toggle_all, remove_selected, clear_list, add_video_row
+    )
+except Exception as e:
+    # Catch missing or renamed files immediately!
+    logging.critical("FATAL ERROR: A required project file is missing or corrupted!", exc_info=True)
+    sys.exit(1)
 
 
 # --- Window Setup ---
@@ -35,18 +54,35 @@ app = ctk.CTk()
 app.geometry("1000x700")
 app.title(config.APP_TITLE)
 
+# Check missing image assets and log them silently at startup
+def check_assets_at_startup():
+    assets = [
+        config.ICON_FILE, config.SEARCH_ICON_PATH, config.SPEED_FAST_ICON_PATH,
+        config.SPEED_SLOW_ICON_PATH, config.CONTACT_ICON_PATH
+    ]
+    for asset in assets:
+        if not os.path.exists(asset):
+            logging.warning(f"Visual asset missing: {asset}")
+
+check_assets_at_startup()
+
 try:
     app.iconbitmap(default=config.ICON_FILE)
 except:
     pass
+
+# 3. Link Tkinter UI errors to our black box
+app.report_callback_exception = lambda exc, val, tb: logging.critical("Tkinter UI Exception!", exc_info=(exc, val, tb))
 
 # --- Custom Logger ---
 class SilentLogger:
     def debug(self, msg): 
         if config.SHOW_TERMINAL_LOGS: print(msg)
     def warning(self, msg): 
+        logging.warning(msg) # Save warning to file
         if config.SHOW_TERMINAL_LOGS: print(msg)
     def error(self, msg): 
+        logging.error(msg) # Save error to file
         if config.SHOW_TERMINAL_LOGS: print(msg)
 
 def global_hardware_shortcuts(event):
@@ -129,7 +165,8 @@ def fetch_size_for_single_video(row_data, quality):
                 row_data['bytes_size'] = 0
                 app.after(0, lambda: layout.safe_ui_update(row_data['size_label'], text="Unknown", text_color="#aaaaaa"))
                 
-    except Exception:
+    except Exception as e:
+        logging.error(f"Failed to fetch size for '{row_data['url']}'. Reason: {str(e)}") # Save fetch error
         row_data['bytes_size'] = 0
         app.after(0, lambda: layout.safe_ui_update(row_data['size_label'], text="Error", text_color=config.COLOR_RED))
         with state.error_lock:
@@ -236,6 +273,7 @@ def fetch_video_data():
         entries_data, qualities = get_video_info(url)
         app.after(0, lambda: render_chunk(entries_data, 0, qualities))
     except Exception as e:
+        logging.error(f"Search Failed for URL '{url}'. Reason: {str(e)}") # Save broken link error
         app.after(0, lambda: layout.update_global_status(messages.STATUS_SEARCH_FAILED, config.COLOR_RED, ""))
         app.after(0, lambda e=e: custom_msg_box(messages.TITLE_ERROR, messages.MSG_CONN_ERROR, "error"))
 

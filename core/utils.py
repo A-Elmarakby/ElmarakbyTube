@@ -79,3 +79,49 @@ def update_user_data(key, value):
     with open(data_file, "w", encoding="utf-8") as f:
         # Save with indent for readability and ensure_ascii=False for Arabic support
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+#######################__5__############################
+# Advanced Error Logging System
+import logging
+from logging.handlers import RotatingFileHandler
+import sys
+import traceback
+
+def setup_logger(app_window=None):
+    """Sets up the professional rotating log system to catch silent errors."""
+    # 1. Choose where to save the log file (beside user_data.json)
+    base_dir = os.path.dirname(get_user_data_path())
+    log_file = os.path.join(base_dir, "ElmarakbyTube_Errors.log")
+
+    # 2. Design how the text will look in the file
+    # Example: [2026-05-22 14:30:00] [ERROR] [main.py]: Download failed
+    log_format = logging.Formatter('[%(asctime)s] [%(levelname)s] [%(filename)s]: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    # 3. Setup the file manager (Max 1MB, keep 2 backups)
+    file_handler = RotatingFileHandler(log_file, maxBytes=config.MAX_LOG_SIZE_BYTES, backupCount=config.LOG_BACKUP_COUNT, encoding='utf-8')
+    file_handler.setFormatter(log_format)
+
+    # 4. Turn on the logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO) # Record INFO and above
+    
+    # Stop adding handlers if called twice
+    if not root_logger.handlers:
+        root_logger.addHandler(file_handler)
+
+    # 5. Catch silent Python crashes
+    def global_exception_handler(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logging.critical("Uncaught Python Exception!", exc_info=(exc_type, exc_value, exc_traceback))
+
+    sys.excepthook = global_exception_handler
+
+    # 6. Catch silent UI (Tkinter) crashes
+    if app_window:
+        def tk_exception_handler(exc, val, tb):
+            logging.critical("Tkinter UI Exception!", exc_info=(exc, val, tb))
+        app_window.report_callback_exception = tk_exception_handler
+
+    logging.info("--- App Started Successfully ---")

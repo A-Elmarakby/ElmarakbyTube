@@ -1,5 +1,6 @@
 import os
 import sys
+import logging # Added to record missing files
 
 # Get the full path of the folder containing config.py
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -117,50 +118,45 @@ def play_sound(sound_type="info"):
         return # Skip sound on Mac/Linux to prevent crashes
 
     import winsound # Import here safely
+    import logging  # Import logging to record missing sounds
     
-    if sound_type == "success":
-        if not PLAY_SUCCESS_SOUND:
-            return 
-        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_SUCCESS_SOUND_PATH):
-            winsound.PlaySound(CUSTOM_SUCCESS_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
+    # Helper to check file and play, or log warning and play fallback
+    def _play(path, fallback_sound, is_async=True):
+        if SOUND_SOURCE == "custom" and os.path.exists(path):
+            flags = winsound.SND_FILENAME
+            if is_async: flags |= winsound.SND_ASYNC
+            winsound.PlaySound(path, flags)
         else:
-            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            if SOUND_SOURCE == "custom":
+                logging.warning(f"Audio file missing: {path}")
+            winsound.MessageBeep(fallback_sound)
+
+    if sound_type == "success":
+        if not PLAY_SUCCESS_SOUND: return 
+        _play(CUSTOM_SUCCESS_SOUND_PATH, winsound.MB_ICONASTERISK)
             
     elif sound_type == "error":
-        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_ERROR_SOUND_PATH):
-            winsound.PlaySound(CUSTOM_ERROR_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        else:
-            winsound.MessageBeep(winsound.MB_ICONHAND)
+        _play(CUSTOM_ERROR_SOUND_PATH, winsound.MB_ICONHAND)
             
     elif sound_type == "warning":
-        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_WARNING_SOUND_PATH):
-            winsound.PlaySound(CUSTOM_WARNING_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        else:
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        _play(CUSTOM_WARNING_SOUND_PATH, winsound.MB_ICONEXCLAMATION)
             
     elif sound_type == "data_warning":
-        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH):
-            winsound.PlaySound(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        else:
-            # Play default sound if file is missing
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        _play(CUSTOM_DATA_LIMIT_WARNING_SOUND_PATH, winsound.MB_ICONEXCLAMATION)
             
     elif sound_type == "exit":
         if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_EXIT_SOUND_PATH):
-            # Play custom exit sound and wait for it to finish
             winsound.PlaySound(CUSTOM_EXIT_SOUND_PATH, winsound.SND_FILENAME)
         else:
+            if SOUND_SOURCE == "custom":
+                logging.warning(f"Audio file missing: {CUSTOM_EXIT_SOUND_PATH}")
             # Create a shutdown melody (3 notes going down)
             winsound.Beep(800, 150) # High note
             winsound.Beep(600, 150) # Middle note
             winsound.Beep(400, 250) # Low note
             
     else: # Default is "info"
-        if SOUND_SOURCE == "custom" and os.path.exists(CUSTOM_INFO_SOUND_PATH):
-            winsound.PlaySound(CUSTOM_INFO_SOUND_PATH, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        else:
-            winsound.MessageBeep(winsound.MB_ICONASTERISK)
-
+        _play(CUSTOM_INFO_SOUND_PATH, winsound.MB_ICONASTERISK)
 
 # ==========================================
 # 6. ICONS & IMAGES (Paths to pictures)
@@ -246,3 +242,11 @@ QUALITY_AUDIO = "Audio Only (MP3)"
 # we "snap" it to that standard size.
 # If it is more than 10% different, we hide it from the user.
 SNAP_THRESHOLD = 0.10
+
+# ==========================================
+# 10. LOGGING SETTINGS (Error Tracking)
+# ==========================================
+# Max size of the log file before creating a new one (1 MB = 1024 * 1024 bytes)
+MAX_LOG_SIZE_BYTES = 20*1024 * 1024 
+# How many old log files to keep
+LOG_BACKUP_COUNT = 5
