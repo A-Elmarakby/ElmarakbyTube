@@ -6,11 +6,23 @@ What it does: The main brain of the app. Connects logic (core) with UI (layout).
 import os
 import sys
 import logging
+import time # Added to calculate total usage time
+
+# Save the exact time the app started
+APP_START_TIME = time.time()
 
 # 1. Start logger FIRST (Before importing anything else to catch missing files)
 try:
     from core.utils import setup_logger
     setup_logger()
+    
+    # Start the Analytics Engine
+    from core.analytics import init_analytics, increment_stat, record_system_info
+    init_analytics()
+    # Add 1 to total app opens
+    increment_stat("app_lifecycle", "total_launches")
+    # Save OS and CPU info
+    record_system_info()
 except Exception as e:
     # Absolute fallback if utils.py itself is missing
     logging.basicConfig(filename="Emergency_Crash.log", level=logging.CRITICAL)
@@ -657,6 +669,13 @@ def on_closing():
 
         # 2. Parallel shutdown manager
         def shutdown_manager():
+            # Save the total time the user spent in the app before closing
+            try:
+                from core.analytics import record_uptime
+                record_uptime(APP_START_TIME)
+            except Exception:
+                pass
+
             # Create one thread for sound and one thread for cleanup
             sound_thread = threading.Thread(target=lambda: config.play_sound("exit"))
             cleanup_thread = threading.Thread(target=_force_kill_all_background_processes)
