@@ -15,6 +15,7 @@ from PIL import Image
 import config
 import messages
 from core.utils import apply_bidi, load_user_data, update_user_data
+from core.analytics import increment_stat # Added to save clicks
 
 # ==========================================
 # UI Helpers & Smart Icon Loader
@@ -323,6 +324,13 @@ def show_contact_popup(parent_window=None):
         if hasattr(__main__, 'app'):
             parent_window = __main__.app
 
+    # --- Analytics: Record main contact button click ---
+    try:
+        increment_stat("app_lifecycle", "main_contact_btn_clicks", sub_category="support_interactions")
+    except Exception:
+        pass
+    # ---------------------------------------------------
+
     dialog = ctk.CTkToplevel(parent_window)
     dialog.title("Contact Us")
     
@@ -339,10 +347,22 @@ def show_contact_popup(parent_window=None):
     btn_frame.pack()
     btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    ctk.CTkButton(btn_frame, text="LinkedIn", font=btn_font, fg_color=config.SOCIAL_LINKEDIN_COLOR, hover=True, hover_color=config.SOCIAL_LINKEDIN_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_LINKEDIN)).grid(row=0, column=0, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="WhatsApp", font=btn_font, fg_color=config.SOCIAL_WHATSAPP_COLOR, hover=True, hover_color=config.SOCIAL_WHATSAPP_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_WHATSAPP)).grid(row=0, column=1, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="GitHub", font=btn_font, fg_color=config.SOCIAL_GITHUB_COLOR, hover=True, hover_color=config.SOCIAL_GITHUB_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_GITHUB)).grid(row=1, column=0, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="Email", font=btn_font, fg_color=config.SOCIAL_EMAIL_COLOR, hover=True, hover_color=config.SOCIAL_EMAIL_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: webbrowser.open(messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
+    # --- Helper function to open link and save analytics safely ---
+    def open_social_and_track(platform_name, url):
+        """Save the click in the file, then open the website."""
+        try:
+            # Example: save to 'whatsapp_clicks' inside 'support_interactions'
+            key_name = f"{platform_name}_clicks"
+            increment_stat("app_lifecycle", key_name, sub_category="support_interactions")
+        except Exception:
+            pass
+        webbrowser.open(url)
+    # --------------------------------------------------------------
+
+    ctk.CTkButton(btn_frame, text="LinkedIn", font=btn_font, fg_color=config.SOCIAL_LINKEDIN_COLOR, hover=True, hover_color=config.SOCIAL_LINKEDIN_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("linkedin", messages.URL_LINKEDIN)).grid(row=0, column=0, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="WhatsApp", font=btn_font, fg_color=config.SOCIAL_WHATSAPP_COLOR, hover=True, hover_color=config.SOCIAL_WHATSAPP_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("whatsapp", messages.URL_WHATSAPP)).grid(row=0, column=1, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="GitHub", font=btn_font, fg_color=config.SOCIAL_GITHUB_COLOR, hover=True, hover_color=config.SOCIAL_GITHUB_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("github", messages.URL_GITHUB)).grid(row=1, column=0, padx=10, pady=10)
+    ctk.CTkButton(btn_frame, text="Email", font=btn_font, fg_color=config.SOCIAL_EMAIL_COLOR, hover=True, hover_color=config.SOCIAL_EMAIL_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("email", messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
 
 def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     if parent_window is None:

@@ -192,6 +192,16 @@ def setup_context_menu(entry_widget):
         # Click the box and run the action.
         entry_widget.focus()
         target = entry_widget._entry if hasattr(entry_widget, '_entry') else entry_widget
+        
+        # --- Analytics: Record mouse right-click menu usage ---
+        # Add 1 to the counter when user clicks Copy/Paste with the mouse
+        try:
+            from core.analytics import increment_stat
+            increment_stat("app_lifecycle", "context_menu_used")
+        except Exception:
+            pass
+        # ------------------------------------------------------
+        
         try:
             target.event_generate(event_name)
         except Exception:

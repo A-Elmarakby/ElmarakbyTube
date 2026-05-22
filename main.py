@@ -103,6 +103,18 @@ def global_hardware_shortcuts(event):
 
     if has_ctrl:
         keysym = event.keysym.lower()
+        
+        # --- Analytics: Record keyboard shortcuts ---
+        # Only save the action if the user pressed Ctrl + a real shortcut letter (A, C, V, X, Z)
+        # Key numbers: A=65, C=67, V=86, X=88, Z=90
+        valid_keys = [65, 67, 86, 88, 90]
+        if event.keycode in valid_keys:
+            try:
+                increment_stat("app_lifecycle", "hardware_shortcuts_used")
+            except Exception:
+                pass
+        # --------------------------------------------
+        
         if event.keycode == 65 and keysym != 'a': 
             try:
                 event.widget.select_range(0, 'end')
@@ -206,6 +218,14 @@ def fetch_all_sizes_worker():
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
+    # --- Analytics: Record valid fetch sizes ---
+    # Save this action only if the user selected a video and it really started
+    try:
+        increment_stat("search_behavior", "fetch_sizes_clicks")
+    except Exception:
+        pass
+    # -------------------------------------------
+
     try:
         state.fetch_event.set()
         state.consecutive_errors = 0
@@ -276,6 +296,14 @@ def fetch_video_data():
         app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_URL_MISSING, "error"))
         return
 
+    # --- Analytics: Record search attempt ---
+    try:
+        # Add 1 to total search attempts (valid or invalid)
+        increment_stat("search_behavior", "total_links_searched")
+    except Exception:
+        pass
+    # ----------------------------------------
+
     app.after(0, layout.clear_list)
     app.after(0, lambda: layout.update_global_status(messages.STATUS_CONNECTING, config.COLOR_CYAN, ""))
     if state.quality_combo:
@@ -284,8 +312,33 @@ def fetch_video_data():
     try:
         entries_data, qualities = get_video_info(url)
         app.after(0, lambda: render_chunk(entries_data, 0, qualities))
+        
+        # --- Analytics: Record success and link type ---
+        try:
+            # Count how many videos we found (1 for a single video, or many for a playlist)
+            found_count = len(entries_data)
+            increment_stat("search_behavior", "videos_fetched_successfully", amount=found_count)
+            
+            # Now we are sure the link works! Check if it is a playlist or single
+            if "list=" in url:
+                increment_stat("search_behavior", "playlist_links")
+            else:
+                increment_stat("search_behavior", "single_video_links")
+        except Exception:
+            pass
+        # -----------------------------------------------
+        
     except Exception as e:
         logging.error(f"Search Failed for URL '{url}'. Reason: {str(e)}") # Save broken link error
+        
+        # --- Analytics: Record bad link error ---
+        # Add 1 if the link is broken or wrong
+        try:
+            increment_stat("search_behavior", "invalid_links_entered")
+        except Exception:
+            pass
+        # ----------------------------------------
+        
         app.after(0, lambda: layout.update_global_status(messages.STATUS_SEARCH_FAILED, config.COLOR_RED, ""))
         app.after(0, lambda e=e: custom_msg_box(messages.TITLE_ERROR, messages.MSG_CONN_ERROR, "error"))
 

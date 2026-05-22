@@ -42,6 +42,7 @@ def get_default_schema():
             "total_launches": 0,
             "total_uptime_minutes": 0,
             "hardware_shortcuts_used": 0,
+            "context_menu_used": 0,
             "support_interactions": {
                 "main_contact_btn_clicks": 0,
                 "whatsapp_clicks": 0,
