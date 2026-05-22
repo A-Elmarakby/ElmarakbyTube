@@ -63,7 +63,7 @@ def get_default_schema():
             "total_videos_downloaded": 0,
             "single_videos_downloaded": 0,
             "playlists_downloaded": 0,
-            "total_videos_inside_playlists": 0,
+            "total_playlist_videos_downloaded": 0,
             "downloads_completed": 0,
             "downloads_failed": 0,
             "downloads_canceled_by_user": 0,
