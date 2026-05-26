@@ -13,6 +13,8 @@ APP_START_TIME = time.time()
 
 # Analytics: Flag to prevent counting the same playlist multiple times
 _current_session_playlist_counted = False
+# Analytics: Flag to prevent counting the same quality choice multiple times in one session
+_current_session_quality_counted = False
 
 # 1. Start logger FIRST (Before importing anything else to catch missing files)
 try:
@@ -295,11 +297,11 @@ def fetch_video_data():
     if state.url_entry is None: return
     url = state.url_entry.get()
     
-    # --- Analytics: Reset the playlist counted flag for the new search ---
-    # We do this because a new search means a new session starts
-    global _current_session_playlist_counted
+    # --- Analytics: Reset the session flags for the new search ---
+    global _current_session_playlist_counted, _current_session_quality_counted
     _current_session_playlist_counted = False
-    # ---------------------------------------------------------------------
+    _current_session_quality_counted = False
+    # --------------------------------------------------------------
 
     if not url:
         app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_URL_MISSING, "error"))
@@ -412,6 +414,19 @@ def _download_process(rows_to_download, quality, save_path):
             )
             if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
+                
+                # --- Analytics: Record overall totals safely ---
+                try:
+                    increment_stat("download_metrics", "downloads_completed")
+                    increment_stat("download_metrics", "total_videos_downloaded")
+                    
+                    # Check if downloading from a playlist view to record items count
+                    if len(state.video_rows) > 1:
+                        increment_stat("download_metrics", "total_playlist_videos_downloaded")
+                except Exception:
+                    pass
+                # -----------------------------------------------
+                
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
                 app.after(0, lambda r=row_data: layout.safe_progress_update(r['progress'], 1.0))
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
@@ -457,20 +472,46 @@ def download_worker():
         if state.download_event.is_set():
             failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
             
-            # --- Analytics: Record full playlist finish safely ---
+            # --- Analytics: Record strict User ComboBox selections safely ---
             try:
-                global _current_session_playlist_counted
-                # Check if it is a playlist preset or multiple custom selections from an audio list
-                is_playlist_preset = quality in [config.QUALITY_BEST, config.QUALITY_MEDIUM, config.QUALITY_LOW]
-                is_multi_audio = len(selected_rows) > 1 and "Audio" in quality
+                global _current_session_quality_counted
+                success_count = sum(1 for r in selected_rows if r.get('dl_state') == 'completed')
                 
-                if is_playlist_preset or is_multi_audio:
-                    if not _current_session_playlist_counted:
-                        increment_stat("download_metrics", "playlists_downloaded")
-                        _current_session_playlist_counted = True # Lock it for this search session!
+                if success_count > 0 and not _current_session_quality_counted:
+                    # Case A: User is downloading from a Playlist layout
+                    if len(state.video_rows) > 1:
+                        playlist_map = {
+                            config.QUALITY_BEST: "playlist_Best_Quality",
+                            config.QUALITY_MEDIUM: "playlist_Medium",
+                            config.QUALITY_LOW: "playlist_Low",
+                            config.QUALITY_AUDIO: "playlist_Audio_Only"
+                        }
+                        analytics_key = playlist_map.get(quality)
+                        if analytics_key:
+                            increment_stat("download_metrics", analytics_key, amount=1, sub_category="playlist_presets")
+                            _current_session_quality_counted = True # Lock it for this selection session!
+                    
+                    # Case B: User is downloading a Single Video layout
+                    else:
+                        q_clean = str(quality).lower()
+                        if "audio" in q_clean:
+                            increment_stat("download_metrics", "single_Audio_Only", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "144p" in q_clean: increment_stat("download_metrics", "exact_144p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "240p" in q_clean: increment_stat("download_metrics", "exact_240p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "360p" in q_clean: increment_stat("download_metrics", "exact_360p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "480p" in q_clean: increment_stat("download_metrics", "exact_480p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "720p" in q_clean: increment_stat("download_metrics", "exact_720p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "1080p" in q_clean: increment_stat("download_metrics", "exact_1080p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "1440p" in q_clean: increment_stat("download_metrics", "exact_1440p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "4k" in q_clean: increment_stat("download_metrics", "exact_4K", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "8k" in q_clean: increment_stat("download_metrics", "exact_8K", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "16k" in q_clean: increment_stat("download_metrics", "exact_16K_plus", amount=1, sub_category="single_videos_exact_resolutions")
+                        
+                        _current_session_quality_counted = True # Lock it for this selection session!
             except Exception:
                 pass
-            # ------------------------------------------------------
+            # ------------------------------------------------------------------
+            # ------------------------------------------------------------------
             
             if failed_count > 0:
                 app.after(0, lambda: layout.update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
@@ -776,8 +817,15 @@ app.protocol("WM_DELETE_WINDOW", on_closing)
 
 app.after(500, lambda: show_welcome_onboarding(app))
 
+# --- Analytics: Walkie-Talkie to let UI reset the quality lock ---
+def reset_quality_flag():
+    global _current_session_quality_counted
+    _current_session_quality_counted = False
+# ----------------------------------------------------------------
+
 # --- Build UI via layout.py ---
 callbacks_dict = {
+    'reset_quality_flag': reset_quality_flag,
     'global_hardware_shortcuts': global_hardware_shortcuts,
     'on_search_click': on_search_click,
     'on_fetch_sizes_click': on_fetch_sizes_click,

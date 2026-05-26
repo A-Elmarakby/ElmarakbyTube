@@ -289,6 +289,10 @@ def _build_toolbar_section(parent, callbacks):
     quality_layout.pack(side="right")
 
     def on_quality_change(choice):
+        # --- Analytics: Reset flag safely via callback ---
+        if 'reset_quality_flag' in callbacks:
+            callbacks['reset_quality_flag']()
+        # -------------------------------------------------
         for row in state.video_rows:
             row['bytes_size'] = -1 
             safe_ui_update(row['size_label'], text="N/A", text_color="white")

@@ -233,19 +233,32 @@ def save_analytics(data):
 # These functions are called by the app to change the numbers in the file.
 
 def increment_stat(category, key, amount=1, sub_category=None):
-    """Add a number (like +1) to a specific counter in the file."""
+    """
+    Safely increment a number in the analytics file.
+    Supports deep nesting for quality_preferences and playlist_presets.
+    """
     with _analytics_lock:
-        data = load_analytics()
-        
-        # Go to the right place and add the number safely
-        if category in data:
-            if sub_category and sub_category in data[category]:
-                if key in data[category][sub_category]:
+        try:
+            data = load_analytics()
+            
+            # Deep mapping check for quality preferences (3 Levels deep)
+            if sub_category in ["single_videos_exact_resolutions", "playlist_presets"]:
+                if category in data and "quality_preferences" in data[category]:
+                    if sub_category in data[category]["quality_preferences"]:
+                        if key in data[category]["quality_preferences"][sub_category]:
+                            data[category]["quality_preferences"][sub_category][key] += amount
+            
+            # Normal behavior for 2 levels or flat keys
+            elif sub_category:
+                if category in data and sub_category in data[category] and key in data[category][sub_category]:
                     data[category][sub_category][key] += amount
-            elif key in data[category]:
-                data[category][key] += amount
-                
-        save_analytics(data)
+            else:
+                if category in data and key in data[category]:
+                    data[category][key] += amount
+                    
+            save_analytics(data)
+        except Exception:
+            pass
 
 def update_speed_stat(speed_mbps):
     """Check and update the highest and lowest internet speed."""
