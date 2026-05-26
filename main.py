@@ -11,6 +11,9 @@ import time # Added to calculate total usage time
 # Save the exact time the app started
 APP_START_TIME = time.time()
 
+# Analytics: Flag to prevent counting the same playlist multiple times
+_current_session_playlist_counted = False
+
 # 1. Start logger FIRST (Before importing anything else to catch missing files)
 try:
     from core.utils import setup_logger
@@ -292,6 +295,12 @@ def fetch_video_data():
     if state.url_entry is None: return
     url = state.url_entry.get()
     
+    # --- Analytics: Reset the playlist counted flag for the new search ---
+    # We do this because a new search means a new session starts
+    global _current_session_playlist_counted
+    _current_session_playlist_counted = False
+    # ---------------------------------------------------------------------
+
     if not url:
         app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_URL_MISSING, "error"))
         return
@@ -314,16 +323,16 @@ def fetch_video_data():
         app.after(0, lambda: render_chunk(entries_data, 0, qualities))
         
         # --- Analytics: Record success and link type ---
+        # We check the actual number of fetched videos to be 100% accurate
         try:
-            # Count how many videos we found (1 for a single video, or many for a playlist)
             found_count = len(entries_data)
             increment_stat("search_behavior", "videos_fetched_successfully", amount=found_count)
             
-            # Now we are sure the link works! Check if it is a playlist or single
-            if "list=" in url:
-                increment_stat("search_behavior", "playlist_links")
-            else:
+            # If we found exactly 1 video, it is a single video link (Even with list= in URL)
+            if found_count == 1:
                 increment_stat("search_behavior", "single_video_links")
+            else:
+                increment_stat("search_behavior", "playlist_links")
         except Exception:
             pass
         # -----------------------------------------------
