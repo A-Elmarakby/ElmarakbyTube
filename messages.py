@@ -85,7 +85,7 @@ BTN_CONTINUE = "تمام، كمل"
 # ------------------------------------------
 TITLE_WELCOME = "مرحبًا"
 MSG_WELCOME_ASK = "أهلاً بيك يا صديقي، ممكن نتعرف؟"
-MSG_WELCOME_GREET = "أهلاً وسهلاً بيك يا {name} نتمنى لك تجربة ممتعة 🎉"
+MSG_WELCOME_GREET = "أهلاً وسهلاً بيك يا {name} بتمنى ليك تجربة ممتعة 💚"
 BTN_CONFIRM_NAME = "يلا نبدأ"
 PLACEHOLDER_NAME = "اكتب اسمك هنا... (o_o)"
 MSG_NAME_REQUIRED = "ممكن تقولنا اسمك الأول؟"
