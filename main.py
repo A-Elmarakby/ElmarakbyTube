@@ -456,6 +456,22 @@ def download_worker():
 
         if state.download_event.is_set():
             failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
+            
+            # --- Analytics: Record full playlist finish safely ---
+            try:
+                global _current_session_playlist_counted
+                # Check if it is a playlist preset or multiple custom selections from an audio list
+                is_playlist_preset = quality in [config.QUALITY_BEST, config.QUALITY_MEDIUM, config.QUALITY_LOW]
+                is_multi_audio = len(selected_rows) > 1 and "Audio" in quality
+                
+                if is_playlist_preset or is_multi_audio:
+                    if not _current_session_playlist_counted:
+                        increment_stat("download_metrics", "playlists_downloaded")
+                        _current_session_playlist_counted = True # Lock it for this search session!
+            except Exception:
+                pass
+            # ------------------------------------------------------
+            
             if failed_count > 0:
                 app.after(0, lambda: layout.update_global_status(f"Finished with {failed_count} errors. Click 'Failed' in the list to see why.", "orange", ""))
             else:
