@@ -408,6 +408,10 @@ def _download_process(rows_to_download, quality, save_path):
         def check_cancelled():
             return not state.download_event.is_set()
 
+        # --- Analytics: Start precise download timer ---
+        video_start_time = time.time()
+        # -----------------------------------------------
+
         try:
             download_single_video(
                 row_data['url'], row_data['title'], save_path, quality, handle_progress, check_cancelled
@@ -415,17 +419,39 @@ def _download_process(rows_to_download, quality, save_path):
             if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
                 
-                # --- Analytics: Record overall totals safely ---
+                # --- Analytics: Record overall totals, speed, and consumption safely ---
                 try:
+                    # 1. Increment standard completion counters
                     increment_stat("download_metrics", "downloads_completed")
                     increment_stat("download_metrics", "total_videos_downloaded")
                     
-                    # Check if downloading from a playlist view to record items count
-                    if len(state.video_rows) > 1:
+                    is_playlist = len(state.video_rows) > 1
+                    if is_playlist:
                         increment_stat("download_metrics", "total_playlist_videos_downloaded")
+                        
+                    # 2. Calculate time taken and file size
+                    time_taken = time.time() - video_start_time
+                    file_size_bytes = row_data.get('bytes_size', 0)
+                    
+                    if file_size_bytes > 0:
+                        mb_size = file_size_bytes / (1024.0 * 1024.0)
+                        # Save total megabytes downloaded
+                        increment_stat("download_metrics", "total_downloaded_mb", amount=mb_size)
+                        
+                        # 3. Calculate internet speed safely (Only for single videos)
+                        if not is_playlist and time_taken > 0:
+                            # Save total seconds spent downloading
+                            increment_stat("download_metrics", "total_download_time_seconds", amount=time_taken)
+                            
+                            # Speed formula: Megabytes divided by Seconds
+                            speed_mbps = mb_size / time_taken
+                            
+                            # Update the highest and lowest speed records in JSON
+                            from core.analytics import update_speed_stat
+                            update_speed_stat(speed_mbps)
                 except Exception:
                     pass
-                # -----------------------------------------------
+                # -----------------------------------------------------------------------
                 
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
                 app.after(0, lambda r=row_data: layout.safe_progress_update(r['progress'], 1.0))

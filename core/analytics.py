@@ -71,6 +71,12 @@ def get_default_schema():
             "total_download_time_seconds": 0.0,
             "highest_speed_mbps": 0.0,
             "lowest_speed_mbps": 0.0,
+            "internet_speed_profile": {
+                "last_tested_speed_mbps": 0.0,
+                "highest_tested_speed_mbps": 0.0,
+                "lowest_tested_speed_mbps": 0.0,
+                "last_speedtest_timestamp": 0.0
+            },
             "quality_preferences": {
                 "single_videos_exact_resolutions": {
                     "exact_144p": 0, "exact_240p": 0, "exact_360p": 0, 
@@ -261,25 +267,64 @@ def increment_stat(category, key, amount=1, sub_category=None):
             pass
 
 def update_speed_stat(speed_mbps):
-    """Check and update the highest and lowest internet speed."""
+    """Check and update the highest and lowest internet speed from downloads."""
     if speed_mbps <= 0:
         return
         
     with _analytics_lock:
         data = load_analytics()
-        
-        current_high = data["download_metrics"]["highest_speed_mbps"]
-        current_low = data["download_metrics"]["lowest_speed_mbps"]
-        
-        # If the new speed is higher, save it
-        if speed_mbps > current_high:
-            data["download_metrics"]["highest_speed_mbps"] = round(speed_mbps, 2)
+        try:
+            current_high = data["download_metrics"]["highest_speed_mbps"]
+            current_low = data["download_metrics"]["lowest_speed_mbps"]
             
-        # If it is the first time (0.0) or the new speed is lower, save it
-        if current_low == 0.0 or speed_mbps < current_low:
-            data["download_metrics"]["lowest_speed_mbps"] = round(speed_mbps, 2)
+            if speed_mbps > current_high:
+                data["download_metrics"]["highest_speed_mbps"] = round(speed_mbps, 2)
+                
+            if current_low == 0.0 or speed_mbps < current_low:
+                data["download_metrics"]["lowest_speed_mbps"] = round(speed_mbps, 2)
+                
+            save_analytics(data)
+        except Exception:
+            pass
+
+def record_speedtest_result(speed_mbps):
+    """
+    Save the independent network speed test result safely.
+    Updates the speed profile using precise Mbps format.
+    """
+    import time
+    if speed_mbps <= 0:
+        return
+
+    with _analytics_lock:
+        try:
+            data = load_analytics()
             
-        save_analytics(data)
+            # Defensive check: Initialize sub-dictionary if missing in old files
+            if "internet_speed_profile" not in data["download_metrics"]:
+                data["download_metrics"]["internet_speed_profile"] = {
+                    "last_tested_speed_mbps": 0.0,
+                    "highest_tested_speed_mbps": 0.0,
+                    "lowest_tested_speed_mbps": 0.0,
+                    "last_speedtest_timestamp": 0.0
+                }
+
+            profile = data["download_metrics"]["internet_speed_profile"]
+            
+            # Save current test data
+            profile["last_tested_speed_mbps"] = round(speed_mbps, 2)
+            profile["last_speedtest_timestamp"] = time.time()
+            
+            # Check and update historical high/low limits
+            if speed_mbps > profile["highest_tested_speed_mbps"]:
+                profile["highest_tested_speed_mbps"] = round(speed_mbps, 2)
+                
+            if profile["lowest_tested_speed_mbps"] == 0.0 or speed_mbps < profile["lowest_tested_speed_mbps"]:
+                profile["lowest_tested_speed_mbps"] = round(speed_mbps, 2)
+                
+            save_analytics(data)
+        except Exception:
+            pass
 
 def record_system_info():
     """Save computer OS, CPU, RAM, and GPU info safely."""
