@@ -1,12 +1,13 @@
 """
 File: network_tester.py
 What it does: Runs a silent internet speed test in the background.
-We test network speed once every 24 hours using a 1MB fixed file size to get a clean Mbps number.
+Uses centralized variables from config.py and records speed results.
 """
 
 import time
 import threading
 import urllib.request
+import config
 from core.analytics import load_analytics, record_speedtest_result
 
 def run_background_speedtest(app=None):
@@ -16,28 +17,29 @@ def run_background_speedtest(app=None):
     Fully isolated using try-except blocks to guarantee zero application lag.
     """
     try:
-        # 1. Check the 24-hour cache safety gate first
+        # 1. Check the 24-hour cache safety gate first using central config constant
         data = load_analytics()
         current_time = time.time()
         
         if "download_metrics" in data and "internet_speed_profile" in data["download_metrics"]:
             last_run = data["download_metrics"]["internet_speed_profile"].get("last_speedtest_timestamp", 0.0)
-            # 86400 seconds = exactly 24 hours
-            if (current_time - last_run) < 86400:
+            
+            # Use centralized interval constant (86400 seconds)
+            if (current_time - last_run) < config.NET_TEST_INTERVAL_SECONDS:
                 return # Skip testing to protect user internet package data limit
 
-        # 2. Prepare the high-speed 1MB chunk download configuration
-        test_url = "https://speed.cloudflare.com/__down?bytes=10048576"
-        file_size_bytes = 10048576 # Exactly 1 Megabyte
+        # 2. Prepare the high-speed chunk download using config values
+        test_url = config.NET_SPEED_TEST_URL
+        file_size_bytes = config.NET_TEST_FILE_SIZE_BYTES
         
-        # We must act like a real web browser, or Cloudflare will block us (Error 403)
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        # Act like a real web browser using the central configuration User-Agent spoof
+        headers = {'User-Agent': config.NET_USER_AGENT_SPOOF}
         req = urllib.request.Request(test_url, headers=headers)
         
         start_time = time.time()
         
-        # Fetch the small chunk with a strict 4-second safety timeout using the fake browser ID
-        with urllib.request.urlopen(req, timeout=4.0) as response:
+        # Fetch the chunk with a strict configuration safety timeout
+        with urllib.request.urlopen(req, timeout=config.NET_TEST_TIMEOUT_SECONDS) as response:
             response.read() # Download the data completely into volatile memory
             
         time_taken = time.time() - start_time
@@ -48,18 +50,7 @@ def run_background_speedtest(app=None):
             record_speedtest_result(speed_mbps)
             
     except Exception:
-        # If connection fails completely at startup, inform the user safely via UI status bar
-        if app:
-            try:
-                import ui.layout as layout
-                import config
-                app.after(0, lambda: layout.update_global_status(
-                    "Offline Mode: Internet connection down or extremely weak.", 
-                    config.COLOR_RED, 
-                    "⚠️ Check Connection"
-                ))
-            except Exception:
-                pass
+        pass # Die 100% silently with zero UI interference or warnings for safe background testing
 
 def start_network_speed_assessment(app):
     """

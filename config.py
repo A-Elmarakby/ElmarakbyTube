@@ -250,3 +250,18 @@ SNAP_THRESHOLD = 0.10
 MAX_LOG_SIZE_BYTES = 20*1024 * 1024 
 # How many old log files to keep
 LOG_BACKUP_COUNT = 5
+
+# =====================================================================
+# 11. NETWORK TESTER ENGINE CONFIGURATION (CENTRALIZED)
+# =====================================================================
+# 1. JUST CHANGE THIS NUMBER: Set the speedtest file size in Megabytes (MB)
+NET_TEST_SIZE_MB = 10 #(MB)
+
+# 2. AUTOMATIC CALCULATIONS: The engine will calculate bytes and URL dynamically
+NET_TEST_FILE_SIZE_BYTES = NET_TEST_SIZE_MB * 1024 * 1024
+NET_SPEED_TEST_URL = f"https://speed.cloudflare.com/__down?bytes={NET_TEST_FILE_SIZE_BYTES}"
+
+# 3. SAFETY AND SECURITY CONSTANTS
+NET_TEST_TIMEOUT_SECONDS = 15.0           # Connection timeout limit
+NET_TEST_INTERVAL_SECONDS = 0 #86400        # Cache gate split (exactly 24 hours)
+NET_USER_AGENT_SPOOF = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'

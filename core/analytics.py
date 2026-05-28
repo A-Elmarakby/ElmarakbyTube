@@ -75,6 +75,10 @@ def get_default_schema():
                 "last_tested_speed_mbps": 0.0,
                 "highest_tested_speed_mbps": 0.0,
                 "lowest_tested_speed_mbps": 0.0,
+                # last_speedtest_timestamp: Stores the last run time using Unix Epoch format.
+                # It counts total seconds passed since January 1, 1970.
+                # Example: 1779843741 means Wednesday, May 27, 2026.
+                # Used mathematically to calculate the 24-hour safety download gate.
                 "last_speedtest_timestamp": 0.0
             },
             "quality_preferences": {
