@@ -7,13 +7,14 @@ Uses centralized variables from config.py and records speed results.
 import time
 import threading
 import urllib.request
+import logging
 import config
 from core.analytics import load_analytics, record_speedtest_result
 
 def run_background_speedtest(app=None):
     """
     Runs a silent network speed test in the background.
-    Checks internet speed once every 24 hours using a 1MB fixed file size.
+    Checks internet speed once every 24 hours using a 10MB fixed file size.
     Fully isolated using try-except blocks to guarantee zero application lag.
     """
     try:
@@ -49,8 +50,9 @@ def run_background_speedtest(app=None):
             speed_mbps = (file_size_bytes * 8.0) / (time_taken * 1024.0 * 1024.0)
             record_speedtest_result(speed_mbps)
             
-    except Exception:
-        pass # Die 100% silently with zero UI interference or warnings for safe background testing
+    except Exception as e:
+        # Log the error silently into ElmarakbyTube_Errors.log without freezing the UI
+        logging.error(f"Background Speedtest Failed: {str(e)}") # Die 100% silently with zero UI interference or warnings for safe background testing
 
 def start_network_speed_assessment(app):
     """

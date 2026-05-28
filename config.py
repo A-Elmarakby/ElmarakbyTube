@@ -263,5 +263,5 @@ NET_SPEED_TEST_URL = f"https://speed.cloudflare.com/__down?bytes={NET_TEST_FILE_
 
 # 3. SAFETY AND SECURITY CONSTANTS
 NET_TEST_TIMEOUT_SECONDS = 15.0           # Connection timeout limit
-NET_TEST_INTERVAL_SECONDS = 0 #86400        # Cache gate split (exactly 24 hours)
+NET_TEST_INTERVAL_SECONDS = 86400        # Cache gate split (exactly 24 hours)
 NET_USER_AGENT_SPOOF = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
