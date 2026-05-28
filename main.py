@@ -23,6 +23,8 @@ try:
     
     # Start the Analytics Engine
     from core.analytics import init_analytics, increment_stat, record_system_info
+    from core.network_tester import start_network_speed_assessment
+    
     init_analytics()
     # Add 1 to total app opens
     increment_stat("app_lifecycle", "total_launches")
@@ -865,7 +867,9 @@ callbacks_dict = {
 
 layout.build_app_ui(app, callbacks_dict)
 
+# --- Analytics: Delayed Speedtest Initialization to fix early boot bug ---
 if __name__ == "__main__":
+    from core.network_tester import start_network_speed_assessment
+    start_network_speed_assessment(app) # Pass app context safely
     app.mainloop()
     
-    #dellete temp files on exit
