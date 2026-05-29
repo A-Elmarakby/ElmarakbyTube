@@ -3,3 +3,7 @@ __pycache__/
 # Ignore coverage and benchmark report files
 .coverage
 tests/reports/baseline_metrics_*_v*.json
+
+*.webm
+*.mp4
+*.mkv

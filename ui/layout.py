@@ -230,12 +230,23 @@ def _build_top_section(parent, callbacks):
     setup_context_menu(state.path_entry)
 
     # ==============================================================
-    # --- SMART EVENT VALIDATION LOGIC (INJECTED HERE) ---
+    # SMART EVENT VALIDATION LOGIC
     # ==============================================================
     def validate_path_entry(event=None):
-        path = state.path_entry.get().strip()
-        # Ignore empty or generally invalid paths (let main.py handle normal empty path errors)
-        if not path or not os.path.isdir(path): 
+        raw_path = state.path_entry.get().strip()
+        # Ignore empty
+        if not raw_path: 
+            return 
+            
+        # 1. Edge Case Protection: Fix "C:" to "C:\" so it doesn't resolve to CWD
+        if len(raw_path) == 2 and raw_path.endswith(':'):
+            path = raw_path + '\\'
+        else:
+            # Convert to absolute path to catch sneaky relative paths
+            path = os.path.abspath(raw_path)
+
+        # Let main.py handle normal invalid path errors later
+        if not os.path.isdir(path): 
             return 
             
         from core.utils import check_write_permission
@@ -243,12 +254,17 @@ def _build_top_section(parent, callbacks):
             state.path_entry.delete(0, 'end') # Clear the bad path immediately!
             # Apply BIDI strictly for Arabic/English mixed text
             custom_msg_box(apply_bidi(messages.TITLE_PROTECTED_PATH), apply_bidi(messages.MSG_PROTECTED_PATH), "error")
+        else:
+            # 2. Update UI with the real absolute path so the user is never confused
+            if raw_path != path:
+                state.path_entry.delete(0, 'end')
+                state.path_entry.insert(0, path)
 
     # Trigger validation when user clicks away from the box
     state.path_entry.bind("<FocusOut>", validate_path_entry)
     # Trigger validation when user presses Enter
     state.path_entry.bind("<Return>", validate_path_entry)
-    # Trigger validation 50ms after pasting (Using only <<Paste>> as requested)
+    # Trigger validation 50ms after pasting
     state.path_entry.bind("<<Paste>>", lambda e: state.path_entry.after(50, validate_path_entry))
     # ==============================================================
 
