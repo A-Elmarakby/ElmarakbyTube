@@ -271,3 +271,10 @@ NET_USER_AGENT_SPOOF = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 # ==========================================
 # Name of the hidden temporary file used to check if a folder is protected by Windows/OneDrive
 DUMMY_TEST_FILE_NAME = ".ElmarakbyTube_Path_Test.tmp"
+
+# ==========================================
+# 13. SYSTEM SCAN & CACHING SETTINGS
+# ==========================================
+# How many days to wait before scanning the computer hardware again.
+# 180 days = ~6 months. This prevents slowing down the app startup.
+SYSTEM_INFO_CACHE_DAYS = 180

@@ -12,6 +12,9 @@ import json
 import threading
 import platform
 import subprocess
+import logging
+import time
+import sys
 from core.utils import get_user_data_path
 
 # ==========================================
@@ -40,6 +43,7 @@ def get_default_schema():
     return {
         "app_lifecycle": {
             "total_launches": 0,
+            "first_app_launch_date": "",  # <- New: Records the exact date/time of first launch
             "total_uptime_minutes": 0,
             "hardware_shortcuts_used": 0,
             "context_menu_used": 0,
@@ -75,10 +79,6 @@ def get_default_schema():
                 "last_tested_speed_mbps": 0.0,
                 "highest_tested_speed_mbps": 0.0,
                 "lowest_tested_speed_mbps": 0.0,
-                # last_speedtest_timestamp: Stores the last run time using Unix Epoch format.
-                # It counts total seconds passed since January 1, 1970.
-                # Example: 1779843741 means Wednesday, May 27, 2026.
-                # Used mathematically to calculate the 24-hour safety download gate.
                 "last_speedtest_timestamp": 0.0
             },
             "quality_preferences": {
@@ -114,7 +114,8 @@ def get_default_schema():
             "cpu_cores": 0,
             "cpu_name": "Unknown",
             "ram_gb": "Unknown",
-            "gpu_name": "Unknown"
+            "gpu_name": "Unknown",
+            "last_hardware_scan_timestamp": 0.0  # <- New: For 6-months caching logic
         }
     }
 
@@ -125,21 +126,20 @@ def get_default_schema():
 # We use 'try' and 'except' so the app never crashes if it cannot find the info.
 
 def _get_cpu_name():
-    """Try to get the processor name safely and clean empty lines."""
+    """Try to get the processor name safely using native fast APIs."""
     try:
         os_name = platform.system()
         if os_name == "Windows":
-            # Ask Windows for CPU name
-            output = subprocess.check_output("wmic cpu get name", shell=True, text=True)
-            # Remove empty lines and the word 'Name'
-            lines = [l.strip() for l in output.split('\n') if l.strip() and l.strip().lower() != 'name']
-            if lines: return lines[0] # Return the first real text
+            # Lightning fast Registry read (Zero subprocess blocking)
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+            cpu_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+            winreg.CloseKey(key)
+            return cpu_name.strip()
         elif os_name == "Darwin": 
-            # Ask Mac for CPU name
             output = subprocess.check_output("sysctl -n machdep.cpu.brand_string", shell=True, text=True)
             if output.strip(): return output.strip()
         elif os_name == "Linux":
-            # Look inside the Linux cpu info file
             with open("/proc/cpuinfo", "r") as f:
                 for line in f:
                     if "model name" in line:
@@ -153,48 +153,42 @@ def _get_ram_gb():
     try:
         os_name = platform.system()
         if os_name == "Windows":
-            # Ask Windows for RAM bytes
-            output = subprocess.check_output("wmic computersystem get totalphysicalmemory", shell=True, text=True)
-            # Remove empty lines and the header
+            cflags = 0x08000000 if sys.platform == "win32" else 0 # Hide console
+            output = subprocess.check_output("wmic computersystem get totalphysicalmemory", shell=True, text=True, creationflags=cflags)
             lines = [l.strip() for l in output.split('\n') if l.strip() and l.strip().lower() != 'totalphysicalmemory']
             if lines:
-                # Convert bytes to GB
                 gb = int(lines[0]) / (1024 * 1024 * 1024)
                 return f"{round(gb)} GB"
         elif os_name == "Darwin":
-            # Ask Mac for RAM
             output = subprocess.check_output("sysctl -n hw.memsize", shell=True, text=True)
             if output.strip():
                 gb = int(output.strip()) / (1024 * 1024 * 1024)
                 return f"{round(gb)} GB"
         elif os_name == "Linux":
-            # Look inside Linux memory file
             with open("/proc/meminfo", "r") as f:
                 for line in f:
                     if "MemTotal" in line:
                         kb = int(line.split()[1])
-                        gb = kb / (1024 * 1024) # KB to GB
+                        gb = kb / (1024 * 1024) 
                         return f"{round(gb)} GB"
     except Exception:
         pass
     return "Unknown"
 
 def _get_gpu_name():
-    """Try to get Graphic Card name. (Can find multiple GPUs)"""
+    """Try to get Graphic Card name using modern tools."""
     try:
         os_name = platform.system()
         if os_name == "Windows":
-            # Ask Windows for GPU
-            output = subprocess.check_output("wmic path win32_VideoController get name", shell=True, text=True)
-            # Remove empty lines and header
-            lines = [l.strip() for l in output.split('\n') if l.strip() and l.strip().lower() != 'name']
-            # If the user has 2 GPUs (like Intel + Nvidia), join them together
+            cflags = 0x08000000 if sys.platform == "win32" else 0 # Hide console window
+            # Use modern PowerShell instead of deprecated wmic
+            cmd = 'powershell "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"'
+            output = subprocess.check_output(cmd, shell=True, text=True, creationflags=cflags)
+            lines = [l.strip() for l in output.split('\n') if l.strip()]
             if lines: return " + ".join(lines)
         elif os_name == "Linux":
-            # Ask Linux for GPU
             output = subprocess.check_output("lspci | grep -i vga", shell=True, text=True)
             if output.strip(): return output.split(":")[2].strip()
-        # Mac GPU is a bit hard without heavy commands, we skip it safely
     except Exception:
         pass
     return "Unknown"
@@ -208,25 +202,40 @@ def init_analytics():
     """Make the JSON file when the app starts if it does not exist."""
     file_path = get_analytics_file_path()
     with _analytics_lock:
-        if not os.path.exists(file_path):
-            # Create a new file and put the empty blueprint in it
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(get_default_schema(), f, indent=4)
-        else:
-            # If file exists, check if it is broken. If broken, make it new.
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    json.load(f)
-            except Exception:
+        try:
+            if not os.path.exists(file_path):
+                # Create a new file and put the empty blueprint in it
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(get_default_schema(), f, indent=4)
+            else:
+                # If file exists, check if it is broken (JSONDecodeError)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        json.load(f)
+                except json.JSONDecodeError:
+                    logging.warning("Analytics file corrupted. Recreating a fresh blueprint.")
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(get_default_schema(), f, indent=4)
+        except Exception as e:
+            # CRITICAL ERROR: Hard drive issue, permission denied, etc.
+            logging.critical(f"Critical error initializing analytics file: {str(e)}", exc_info=True)
 
 def load_analytics():
-    """Read data from the file and return it."""
+    """Read data from the file and return it safely."""
+    file_path = get_analytics_file_path()
+    
+    # Normal behavior: File hasn't been created yet
+    if not os.path.exists(file_path):
+        return get_default_schema()
+        
     try:
-        with open(get_analytics_file_path(), "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except json.JSONDecodeError:
+        return get_default_schema()
+    except Exception as e:
+        # CRITICAL ERROR: Read failure due to OS level blocks
+        logging.critical(f"Critical OS error reading analytics file: {str(e)}", exc_info=True)
         return get_default_schema()
 
 def save_analytics(data):
@@ -234,8 +243,9 @@ def save_analytics(data):
     try:
         with open(get_analytics_file_path(), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
-    except Exception:
-        pass
+    except Exception as e:
+        # CRITICAL ERROR: Disk full (No space left), write protected, etc.
+        logging.critical(f"Critical failure saving analytics data! Data lost: {str(e)}", exc_info=True)
 
 # ==========================================
 # 7. UPDATE FUNCTIONS
@@ -267,8 +277,8 @@ def increment_stat(category, key, amount=1, sub_category=None):
                     data[category][key] += amount
                     
             save_analytics(data)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.critical(f"Critical logic error in increment_stat for '{category}->{key}': {str(e)}", exc_info=True)
 
 def update_speed_stat(speed_mbps):
     """Check and update the highest and lowest internet speed from downloads."""
@@ -296,7 +306,6 @@ def record_speedtest_result(speed_mbps):
     Save the independent network speed test result safely.
     Updates the speed profile using precise Mbps format.
     """
-    import time
     if speed_mbps <= 0:
         return
 
@@ -331,28 +340,76 @@ def record_speedtest_result(speed_mbps):
             pass
 
 def record_system_info():
-    """Save computer OS, CPU, RAM, and GPU info safely."""
+    """Smart async hardware scan with caching & lifecycle recording."""
+    import datetime
+    import config
+
     with _analytics_lock:
         data = load_analytics()
         
-        # Save normal OS info
-        data["system"]["os_version"] = f"{platform.system()} {platform.release()}"
-        data["system"]["cpu_cores"] = os.cpu_count() or 0
+        # 1. Record First Launch Date (Only if empty)
+        if "first_app_launch_date" not in data["app_lifecycle"] or not data["app_lifecycle"]["first_app_launch_date"]:
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+            data["app_lifecycle"]["first_app_launch_date"] = now_str
+            save_analytics(data)
+            
+        # 2. Check Cache Gate (Failsafe for missing keys in old files)
+        sys_data = data.get("system", {})
+        last_scan_time = sys_data.get("last_hardware_scan_timestamp", 0.0)
+        cpu = sys_data.get("cpu_name", "Unknown")
         
-        # Call our cross-platform hardware readers
-        data["system"]["cpu_name"] = _get_cpu_name()
-        data["system"]["ram_gb"] = _get_ram_gb()
-        data["system"]["gpu_name"] = _get_gpu_name()
+        days_passed = (time.time() - last_scan_time) / 86400.0
         
-        save_analytics(data)
+        # 3. Fast Exit: If we have the data and it's fresh (under 6 months), do NOT block or scan!
+        if cpu != "Unknown" and days_passed < config.SYSTEM_INFO_CACHE_DAYS:
+            return
+
+    # 4. Background Execution: Only runs if data is missing or expired (6 months passed)
+    def background_scanner():
+        time.sleep(5)
+        try:
+            # Gather data
+            os_ver = f"{platform.system()} {platform.release()}"
+            cores = os.cpu_count() or 0
+            cpu_name = _get_cpu_name()
+            ram = _get_ram_gb()
+            gpu = _get_gpu_name()
+            
+            # Save data safely
+            with _analytics_lock:
+                fresh_data = load_analytics()
+                
+                # Defensive check in case schema is corrupted
+                if "system" not in fresh_data:
+                    fresh_data["system"] = {}
+                    
+                fresh_data["system"]["os_version"] = os_ver
+                fresh_data["system"]["cpu_cores"] = cores
+                fresh_data["system"]["cpu_name"] = cpu_name
+                fresh_data["system"]["ram_gb"] = ram
+                fresh_data["system"]["gpu_name"] = gpu
+                fresh_data["system"]["last_hardware_scan_timestamp"] = time.time()
+                
+                save_analytics(fresh_data)
+        except Exception as e:
+            # Save critical errors quietly
+            logging.error(f"Background Hardware Scan Failed: {str(e)}")
+
+    # Launch without blocking the UI
+    scanner_thread = threading.Thread(target=background_scanner, daemon=True)
+    scanner_thread.start()
 
 def record_uptime(start_time_seconds):
     """Calculate total minutes the app was used and save it."""
-    import time
     # Get total minutes: (Current time - Start time) / 60
     uptime_minutes = (time.time() - start_time_seconds) / 60.0
-    with _analytics_lock:
-        data = load_analytics()
-        # Add the new minutes to the existing total
-        data["app_lifecycle"]["total_uptime_minutes"] += round(uptime_minutes, 2)
-        save_analytics(data)
+    def record_uptime(start_time_seconds):
+        """Calculate total minutes the app was used and save it."""
+        uptime_minutes = (time.time() - start_time_seconds) / 60.0
+        with _analytics_lock:
+            try:
+                data = load_analytics()
+                data["app_lifecycle"]["total_uptime_minutes"] += round(uptime_minutes, 2)
+                save_analytics(data)
+            except Exception:
+                pass # Ignore errors during app shutdown to ensure a clean exit
