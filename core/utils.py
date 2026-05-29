@@ -125,3 +125,36 @@ def setup_logger(app_window=None):
         app_window.report_callback_exception = tk_exception_handler
 
     logging.info("--- App Started Successfully ---")
+
+
+def check_write_permission(directory):
+    """
+    Tests if the app has permission to write in the selected directory.
+    Logs ONLY critical unexpected errors.
+    """
+    import os
+    import logging
+    import config
+    
+    test_file = os.path.join(directory, config.DUMMY_TEST_FILE_NAME)
+    try:
+        # Try to write
+        with open(test_file, 'w') as f:
+            f.write("write_test")
+        
+        # Try to clean up
+        try:
+            os.remove(test_file)
+        except Exception:
+            pass 
+            
+        return True
+    
+    except (PermissionError, FileNotFoundError):
+        # NORMAL BEHAVIOR: Windows Defender or OneDrive blocked it. No need to log this.
+        return False
+        
+    except Exception as e:
+        # CRITICAL EDGE CASE: A hardware failure or deep OS error occurred! Log it!
+        logging.critical(f"Critical error during path validation for '{directory}': {str(e)}", exc_info=True)
+        return False

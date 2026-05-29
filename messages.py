@@ -135,3 +135,9 @@ STATUS_CONVERTING_REMUX = "Converting (Remuxing)..."
 STATUS_CONVERTING_RECODE = "Converting (Re-encoding)..."
 STATUS_ALREADY_MP4 = "Already MP4"
 STATUS_AUDIO_FILE = "Audio File"
+
+# ------------------------------------------
+# 10. Protected Path Messages
+# ------------------------------------------
+TITLE_PROTECTED_PATH = "مسار محمي - Protected Path"
+MSG_PROTECTED_PATH = "مش هينفع نحفظ في المكان ده.\nالمجلد ده محمي من الـ Windows.\nجرب اختار أي مكان تاني يعجبك زي الـ Downloads مثلا."

@@ -265,3 +265,9 @@ NET_SPEED_TEST_URL = f"https://speed.cloudflare.com/__down?bytes={NET_TEST_FILE_
 NET_TEST_TIMEOUT_SECONDS = 15.0           # Connection timeout limit
 NET_TEST_INTERVAL_SECONDS = 86400        # Cache gate split (exactly 24 hours)
 NET_USER_AGENT_SPOOF = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+
+# ==========================================
+# 12. FILE SYSTEM TESTING SETTINGS
+# ==========================================
+# Name of the hidden temporary file used to check if a folder is protected by Windows/OneDrive
+DUMMY_TEST_FILE_NAME = ".ElmarakbyTube_Path_Test.tmp"

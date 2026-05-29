@@ -6,6 +6,7 @@ Why we need it: To separate the UI drawing from the main logic.
 
 import customtkinter as ctk
 import tkinter as tk
+import os
 from tkinter import filedialog
 from PIL import Image
 
@@ -192,16 +193,6 @@ def setup_context_menu(entry_widget):
         # Click the box and run the action.
         entry_widget.focus()
         target = entry_widget._entry if hasattr(entry_widget, '_entry') else entry_widget
-        
-        # --- Analytics: Record mouse right-click menu usage ---
-        # Add 1 to the counter when user clicks Copy/Paste with the mouse
-        try:
-            from core.analytics import increment_stat
-            increment_stat("app_lifecycle", "context_menu_used")
-        except Exception:
-            pass
-        # ------------------------------------------------------
-        
         try:
             target.event_generate(event_name)
         except Exception:
@@ -238,11 +229,35 @@ def _build_top_section(parent, callbacks):
     state.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
     setup_context_menu(state.path_entry)
 
+    # ==============================================================
+    # --- SMART EVENT VALIDATION LOGIC (INJECTED HERE) ---
+    # ==============================================================
+    def validate_path_entry(event=None):
+        path = state.path_entry.get().strip()
+        # Ignore empty or generally invalid paths (let main.py handle normal empty path errors)
+        if not path or not os.path.isdir(path): 
+            return 
+            
+        from core.utils import check_write_permission
+        if not check_write_permission(path):
+            state.path_entry.delete(0, 'end') # Clear the bad path immediately!
+            # Apply BIDI strictly for Arabic/English mixed text
+            custom_msg_box(apply_bidi(messages.TITLE_PROTECTED_PATH), apply_bidi(messages.MSG_PROTECTED_PATH), "error")
+
+    # Trigger validation when user clicks away from the box
+    state.path_entry.bind("<FocusOut>", validate_path_entry)
+    # Trigger validation when user presses Enter
+    state.path_entry.bind("<Return>", validate_path_entry)
+    # Trigger validation 50ms after pasting (Using only <<Paste>> as requested)
+    state.path_entry.bind("<<Paste>>", lambda e: state.path_entry.after(50, validate_path_entry))
+    # ==============================================================
+
     def browse_save_path():
         folder_path = filedialog.askdirectory(title="Select Save Folder")
         if folder_path:
             state.path_entry.delete(0, 'end')
             state.path_entry.insert(0, folder_path)
+            validate_path_entry() # Validate the browsed path immediately
 
     ctk.CTkButton(path_input_layout, text="Browse", width=80, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=browse_save_path).pack(side="left")
 
@@ -289,10 +304,6 @@ def _build_toolbar_section(parent, callbacks):
     quality_layout.pack(side="right")
 
     def on_quality_change(choice):
-        # --- Analytics: Reset flag safely via callback ---
-        if 'reset_quality_flag' in callbacks:
-            callbacks['reset_quality_flag']()
-        # -------------------------------------------------
         for row in state.video_rows:
             row['bytes_size'] = -1 
             safe_ui_update(row['size_label'], text="N/A", text_color="white")
