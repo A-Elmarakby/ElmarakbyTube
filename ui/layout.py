@@ -195,6 +195,14 @@ def setup_context_menu(entry_widget):
         target = entry_widget._entry if hasattr(entry_widget, '_entry') else entry_widget
         try:
             target.event_generate(event_name)
+            
+            # --- Analytics: Record context menu usage ONLY when an action is taken ---
+            try:
+                from core.analytics import increment_stat
+                increment_stat("app_lifecycle", "context_menu_used")
+            except Exception:
+                pass
+            # -----------------------------------------------------------------------
         except Exception:
             pass
 
@@ -203,7 +211,7 @@ def setup_context_menu(entry_widget):
     menu.add_command(label="Paste", command=lambda: trigger_event("<<Paste>>"))
 
     def show_menu(event):
-        # Open the menu when the mouse clicks.
+        # Open the menu when the mouse clicks. (Analytics removed from here)
         entry_widget.focus()
         menu.tk_popup(event.x_root, event.y_root)
 
