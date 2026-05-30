@@ -120,6 +120,13 @@ URL_WHATSAPP = "https://wa.me/201010043281"
 URL_GITHUB = "https://github.com/A-Elmarakby"
 URL_EMAIL = "mailto:abderhmanelmarakby20@gmail.com"
 
+BTN_COPIED = "Copied!"
+BTN_COPY = "Copy"
+BTN_OPEN_GMAIL = "Open in Gmail"
+
+MSG_GMAIL_SUBJECT = "ElmarakbyTube Support"
+MSG_GMAIL_BODY = "Hello ElmarakbyTube Team,\n\nI need help with: "
+
 # ------------------------------------------
 # 8. Fetching & Status Messages
 # ------------------------------------------

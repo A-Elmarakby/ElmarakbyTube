@@ -319,26 +319,35 @@ def ask_conversion_speed(parent_window=None):
     return result[0]
 
 def show_contact_popup(parent_window=None):
+    import urllib.parse
+    import logging
+    import tkinter as tk
+    from PIL import Image
+    
     if parent_window is None:
         import __main__
         if hasattr(__main__, 'app'):
             parent_window = __main__.app
 
-    # --- Analytics: Record main contact button click ---
+    # Record contact click
     try:
+        from core.analytics import increment_stat
         increment_stat("app_lifecycle", "main_contact_btn_clicks", sub_category="support_interactions")
     except Exception:
         pass
-    # ---------------------------------------------------
 
     dialog = ctk.CTkToplevel(parent_window)
     dialog.title("Contact Us")
     
     add_dialog_icon(dialog)
     
-    center_toplevel(dialog, 400, 250, parent_window)
+    # Start with 4 buttons size
+    center_toplevel(dialog, 420, 200, parent_window)
     dialog.transient(parent_window)
     dialog.grab_set()
+    
+    dialog._email_expanded = False
+    dialog._reset_timer = None # Timer to reset button colors
     
     lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_CONTACT_WHERE), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"))
     lbl.pack(pady=(20, 15))
@@ -347,23 +356,167 @@ def show_contact_popup(parent_window=None):
     btn_frame.pack()
     btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
-    # --- Helper function to open link and save analytics safely ---
+    email_expansion_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    email_address = messages.URL_EMAIL.replace("mailto:", "")
+    
     def open_social_and_track(platform_name, url):
-        """Save the click in the file, then open the website."""
         try:
-            # Example: save to 'whatsapp_clicks' inside 'support_interactions'
+            from core.analytics import increment_stat
             key_name = f"{platform_name}_clicks"
             increment_stat("app_lifecycle", key_name, sub_category="support_interactions")
-        except Exception:
-            pass
-        webbrowser.open(url)
-    # --------------------------------------------------------------
+            webbrowser.open(url)
+        except Exception as e:
+            logging.critical(f"Critical error opening link for {platform_name}: {str(e)}", exc_info=True)
 
+    # --- The main engine to change both buttons together ---
+    def show_copied_state():
+        if dialog._reset_timer is not None:
+            dialog.after_cancel(dialog._reset_timer)
+            
+        try:
+            copied_img = ctk.CTkImage(
+                light_image=Image.open(config.COPIED_ICON_PATH), 
+                dark_image=Image.open(config.COPIED_ICON_PATH), 
+                size=config.COPIED_ICON_SIZE
+            )
+            # Use image on the right, text on the left
+            copied_kwargs = {
+                "image": copied_img, 
+                "compound": "right", 
+                "text": apply_bidi(f"{messages.BTN_COPIED}" )
+            }
+        except Exception as e:
+            logging.error(f"Missing Copied icon '{config.COPIED_ICON_PATH}': {str(e)}")
+            # Use image=None to center text, and put emoji on the right
+            copied_kwargs = {
+                "image": None, 
+                "text": apply_bidi(f"{messages.BTN_COPIED} {config.COPIED_FALLBACK_EMOJI}")
+            }
+
+        # Update Main Email Button
+        if email_btn.winfo_exists():
+            email_btn.configure(fg_color=config.COLOR_GREEN, hover_color=config.COLOR_GREEN_HOVER, **copied_kwargs)
+        
+        # Update Bottom Copy Button
+        if hasattr(dialog, 'copy_btn') and dialog.copy_btn.winfo_exists():
+            dialog.copy_btn.configure(fg_color=config.COLOR_GREEN, hover_color=config.COLOR_GREEN_HOVER, **copied_kwargs)
+            
+        def revert_state():
+            # Use image=None to clean the button and fix the text in the center
+            if email_btn.winfo_exists():
+                email_btn.configure(text="Email", image=None, fg_color=config.SOCIAL_EMAIL_COLOR, hover_color=config.SOCIAL_EMAIL_HOVER)
+            if hasattr(dialog, 'copy_btn') and dialog.copy_btn.winfo_exists():
+                dialog.copy_btn.configure(text=apply_bidi(messages.BTN_COPY), image=None, fg_color=config.COPY_BTN_COLOR, hover_color=config.COPY_BTN_HOVER)
+                
+        # Wait and then return to normal
+        dialog._reset_timer = dialog.after(config.EMAIL_COPY_DURATION_MS, revert_state)
+    # ----------------------------------------------
+
+    # Smart copy function
+    def trigger_copy(event=None):
+        if event:
+            try:
+                selected_text = dialog.email_entry.selection_get()
+                # If user selected a small part, copy it silently
+                if selected_text and selected_text != email_address:
+                    dialog.clipboard_clear()
+                    dialog.clipboard_append(selected_text)
+                    return "break"
+            except Exception:
+                pass # Did not select anything
+                
+        # Full copy
+        dialog.clipboard_clear()
+        dialog.clipboard_append(email_address)
+        config.play_sound("success")
+        show_copied_state()
+        
+        try:
+            from core.analytics import increment_stat
+            increment_stat("app_lifecycle", "email_clicks", sub_category="support_interactions")
+        except: pass
+        
+        return "break"
+
+    def handle_email_click():
+        try:
+            trigger_copy()
+            
+            # Show the bottom frame only once
+            if not dialog._email_expanded:
+                dialog._email_expanded = True
+                
+                # Make window height 310 to remove empty space
+                current_geom = dialog.geometry()
+                try:
+                    x_y = current_geom.split('+')[1:]
+                    dialog.geometry(f"420x270+{x_y[0]}+{x_y[1]}")
+                except:
+                    dialog.geometry("420x270")
+                    
+                email_expansion_frame.pack(fill="x", padx=25, pady=(15, 0))
+                
+                row1 = ctk.CTkFrame(email_expansion_frame, fg_color="transparent")
+                row1.pack(fill="x", pady=(0, 10))
+                
+                dialog.email_entry = ctk.CTkEntry(row1, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN), text_color="#aaaaaa", justify="center")
+                dialog.email_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+                dialog.email_entry.insert(0, email_address)
+                dialog.email_entry.configure(state="readonly")
+                
+                def select_all(event=None):
+                    dialog.email_entry.select_range(0, 'end')
+                    return "break"
+                    
+                def show_mini_menu(event):
+                    dialog.email_entry.focus()
+                    menu = tk.Menu(dialog, tearoff=0, font=(messages.FONT_FAMILY, 10), bg=config.MENU_BG_COLOR, fg=config.MENU_TEXT_COLOR, activebackground=config.MENU_HOVER_COLOR, activeforeground="white", relief="flat", bd=1)
+                    menu.add_command(label="Copy", command=trigger_copy)
+                    menu.add_command(label="Cut", command=trigger_copy)
+                    menu.add_command(label="Select All", command=select_all)
+                    menu.tk_popup(event.x_root, event.y_root)
+
+                dialog.email_entry.bind("<Button-3>", show_mini_menu)
+                dialog.email_entry.bind("<Control-c>", trigger_copy)
+                dialog.email_entry.bind("<Control-x>", trigger_copy) 
+                dialog.email_entry.bind("<Control-a>", select_all)
+                
+                dialog.copy_btn = ctk.CTkButton(row1, text=apply_bidi(messages.BTN_COPY), font=btn_font, width=70, fg_color=config.COPY_BTN_COLOR, hover_color=config.COPY_BTN_HOVER, command=trigger_copy)
+                dialog.copy_btn.pack(side="right")
+                
+                # Gmail button with safe URL
+                subject = urllib.parse.quote(messages.MSG_GMAIL_SUBJECT)
+                body = urllib.parse.quote(messages.MSG_GMAIL_BODY)
+                gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_address}&su={subject}&body={body}"
+                
+                # Make button, put image on the left side
+                gmail_btn = ctk.CTkButton(email_expansion_frame, height=35, text="", font=btn_font, text_color="white", fg_color=config.SOCIAL_GMAIL_COLOR, hover_color=config.SOCIAL_GMAIL_HOVER, compound="left", command=lambda: open_social_and_track("gmail", gmail_url))
+                gmail_btn.pack(fill="x", pady=(0, 5))
+                
+                try:
+                    gmail_img = ctk.CTkImage(
+                        light_image=Image.open(config.GMAIL_ICON_PATH), 
+                        dark_image=Image.open(config.GMAIL_ICON_PATH), 
+                        size=config.GMAIL_ICON_SIZE
+                    )
+                    gmail_btn.configure(image=gmail_img, text=apply_bidi(f"  {messages.BTN_OPEN_GMAIL}"))
+                except Exception as img_err:
+                    logging.error(f"Missing Gmail icon '{config.GMAIL_ICON_PATH}': {str(img_err)}")
+                    # Use image=None and emoji on the left
+                    gmail_btn.configure(image=None, text=apply_bidi(f"{config.GMAIL_FALLBACK_EMOJI} {messages.BTN_OPEN_GMAIL}"))
+                    
+                show_copied_state()
+
+        except Exception as e:
+            logging.critical(f"Critical error in email popup: {str(e)}", exc_info=True)
+
+    # Basic social buttons
     ctk.CTkButton(btn_frame, text="LinkedIn", font=btn_font, fg_color=config.SOCIAL_LINKEDIN_COLOR, hover=True, hover_color=config.SOCIAL_LINKEDIN_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("linkedin", messages.URL_LINKEDIN)).grid(row=0, column=0, padx=10, pady=10)
     ctk.CTkButton(btn_frame, text="WhatsApp", font=btn_font, fg_color=config.SOCIAL_WHATSAPP_COLOR, hover=True, hover_color=config.SOCIAL_WHATSAPP_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("whatsapp", messages.URL_WHATSAPP)).grid(row=0, column=1, padx=10, pady=10)
     ctk.CTkButton(btn_frame, text="GitHub", font=btn_font, fg_color=config.SOCIAL_GITHUB_COLOR, hover=True, hover_color=config.SOCIAL_GITHUB_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("github", messages.URL_GITHUB)).grid(row=1, column=0, padx=10, pady=10)
-    ctk.CTkButton(btn_frame, text="Email", font=btn_font, fg_color=config.SOCIAL_EMAIL_COLOR, hover=True, hover_color=config.SOCIAL_EMAIL_HOVER, width=config.SOCIAL_BTN_WIDTH, command=lambda: open_social_and_track("email", messages.URL_EMAIL)).grid(row=1, column=1, padx=10, pady=10)
-
+    
+    email_btn = ctk.CTkButton(btn_frame, text="Email", font=btn_font, fg_color=config.SOCIAL_EMAIL_COLOR, hover=True, hover_color=config.SOCIAL_EMAIL_HOVER, width=config.SOCIAL_BTN_WIDTH, command=handle_email_click)
+    email_btn.grid(row=1, column=1, padx=10, pady=10)    
 def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     if parent_window is None:
         import __main__

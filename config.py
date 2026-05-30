@@ -178,6 +178,16 @@ SPEED_SLOW_FALLBACK_EMOJI = "🐢"
 CONTACT_ICON_PATH = os.path.join(ASSETS_DIR, "chat_icon.png") 
 CONTACT_ICON_SIZE = (22, 22)        
 
+GMAIL_ICON_PATH = os.path.join(ASSETS_DIR, "gmail_icon.png")
+GMAIL_ICON_SIZE = (22, 22)
+GMAIL_FALLBACK_EMOJI = "📧"
+
+COPY_ICON_PATH = os.path.join(ASSETS_DIR, "fast_icon.png") # Optional if you want to add an icon to the copy button
+
+COPIED_ICON_PATH = os.path.join(ASSETS_DIR, "copied_icon.png")
+COPIED_ICON_SIZE = (16, 16)
+COPIED_FALLBACK_EMOJI = "✔"
+
 # ==========================================
 # 7. UI SIZES & RULES (Buttons and text)
 # ==========================================
@@ -218,6 +228,17 @@ SOCIAL_GITHUB_COLOR = COLOR_MAGENTA
 SOCIAL_GITHUB_HOVER = COLOR_MAGENTA_HOVER
 SOCIAL_EMAIL_COLOR = COLOR_CYAN
 SOCIAL_EMAIL_HOVER = COLOR_CYAN_HOVER
+
+# Gmail direct open button colors
+SOCIAL_GMAIL_COLOR =   "#333333" 
+SOCIAL_GMAIL_HOVER =   "#444444"
+
+# Copy button colors
+COPY_BTN_COLOR = COLOR_MAGENTA  #"#333333" 
+COPY_BTN_HOVER = COLOR_MAGENTA_HOVER    #"#444444"
+
+# Time for the button to stay green (in milliseconds)
+EMAIL_COPY_DURATION_MS = 2500
 
 # Exit window buttons colors.
 EXIT_STAY_COLOR = COLOR_GREEN
