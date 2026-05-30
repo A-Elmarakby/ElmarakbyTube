@@ -45,90 +45,328 @@ def get_backup_file_path():
 # This block holds the empty starting data.
 # It has a place for every small detail we want to record.
 def get_default_schema():
-    """Return the empty starting data."""
+    """
+    Return the empty starting data with the v2 structure.
+    All comments are written in simple English (A1 Level) to explain every value.
+    """
     return {
-        # Version of the data structure. If changed, app will reset file safely.
-        "_schema_version": 1, 
-        "app_lifecycle": {
+        # What: The version number of this file. 
+        # Source: Developer logic. 
+        # Goal: If we change the structure in the future, we make this 3 to reset the file.
+        "_schema_version": 2, 
+        
+        # What: The exact time the file was made (Unix Float).
+        # Source: analytics.py.
+        # Goal: Know the age of this JSON file.
+        "_created_at_timestamp": time.time(),
+
+        # Section 0: Data Integrity (Health of the JSON file)
+        "0_data_integrity": {
+            # What: Number of times the app fixed a broken file automatically.
+            # Source: analytics.py strict replica engine. 
+            # Goal: Know if the user tries to hack or break the file.
+            "schema_repairs_count": 0,
+            
+            # What: The exact time when the last fix happened (Unix Float).
+            # Source: analytics.py. 
+            # Goal: Know when the hacking or file corruption happened.
+            "last_repair_timestamp": 0.0
+        },
+
+        # Section 1: App Lifecycle (How the user opens and uses the app)
+        "1_app_lifecycle": {
+            # What: The exact date the user opened the app for the first time (String).
+            # Source: App startup logic. 
+            # Goal: Easy to read date for humans.
+            "first_app_launch_date_str": "Unknown",
+            
+            # What: The exact time the user opened the app for the first time (Unix Float).
+            # Source: App startup logic. 
+            # Goal: Easy to use for math and code calculations.
+            "first_app_launch_timestamp": 0.0,
+            
+            # What: How many times the user opened the app in total.
+            # Source: App startup logic. 
+            # Goal: Know if the user likes the app and uses it a lot.
             "total_launches": 0,
-            "first_app_launch_date": "",  # <- New: Records the exact date/time of first launch
-            "total_uptime_minutes": 0,
-            "hardware_shortcuts_used": 0,
-            "context_menu_used": 0,
+            
+            # What: Total minutes the app was open on the screen.
+            # Source: App shutdown logic. 
+            # Goal: Measure how long the user stays inside the app.
+            "total_uptime_minutes": 0.0,
+            
+            # What: How many different days the user opened the app.
+            # Source: App startup logic. 
+            # Goal: Know if the user opens the app every day or rarely.
+            "unique_days_active": 0,
+
+            # What: The exact time the user last opened the app (Unix Float).
+            # Source: App startup logic. 
+            # Goal: Help calculate the 'unique_days_active' number.
+            "last_active_timestamp": 0.0,
+            
+            "ui_interactions": {
+                # What: How many times the user pressed keyboard shortcuts (like Ctrl+V).
+                # Source: UI events. 
+                # Goal: Know if the user prefers keyboard over mouse.
+                "hardware_shortcuts_used": 0,
+                
+                # What: How many times the user right-clicked to open the menu.
+                # Source: UI events. 
+                # Goal: Know if the right-click menu is useful.
+                "context_menu_used": 0
+            },
             "support_interactions": {
+                # What: How many times the user clicked the main contact button.
+                # Source: UI buttons. 
+                # Goal: Measure how often users need help.
                 "main_contact_btn_clicks": 0,
+                
+                # What: How many times the user clicked the WhatsApp icon.
+                # Source: UI buttons. 
+                # Goal: Track WhatsApp support usage.
                 "whatsapp_clicks": 0,
+                
+                # What: How many times the user clicked the LinkedIn icon.
+                # Source: UI buttons. 
+                # Goal: Track LinkedIn profile visits.
                 "linkedin_clicks": 0,
+                
+                # What: How many times the user clicked the GitHub icon.
+                # Source: UI buttons. 
+                # Goal: Track open-source code interest.
                 "github_clicks": 0,
+                
+                # What: How many times the user clicked the Email icon (only one count per popup).
+                # Source: UI buttons. 
+                # Goal: Track email support usage without fake spam counts.
                 "email_clicks": 0
             }
         },
-        "search_behavior": {
+
+        # Section 2: Search Behavior (How the user adds links)
+        "2_search_behavior": {
+            # What: Total number of YouTube links the user pasted.
+            # Source: Search bar. 
+            # Goal: Measure general download activity.
             "total_links_searched": 0,
+            
+            # What: Number of links that are for one video only.
+            # Source: Search bar. 
+            # Goal: Know if users prefer single videos.
             "single_video_links": 0,
+            
+            # What: Number of links that are for full playlists.
+            # Source: Search bar. 
+            # Goal: Know if users prefer playlists.
             "playlist_links": 0,
+            
+            # What: Number of bad or wrong links the user entered.
+            # Source: Link validation logic. 
+            # Goal: Know if users make mistakes often.
             "invalid_links_entered": 0,
+            
+            # What: How many times the user clicked 'Fetch Sizes' to see video MB size.
+            # Source: UI button. 
+            # Goal: Know if users care about video sizes before downloading.
             "fetch_sizes_clicks": 0,
+            
+            # What: How many videos the app read from YouTube successfully.
+            # Source: yt-dlp fetcher. 
+            # Goal: Measure the success rate of reading data.
             "videos_fetched_successfully": 0
         },
-        "download_metrics": {
-            "total_videos_downloaded": 0,
-            "single_videos_downloaded": 0,
-            "playlists_downloaded": 0,
-            "total_playlist_videos_downloaded": 0,
-            "downloads_completed": 0,
-            "downloads_failed": 0,
-            "downloads_canceled_by_user": 0,
-            "total_downloaded_mb": 0.0,
-            "total_download_time_seconds": 0.0,
-            "highest_speed_mbps": 0.0,
-            "lowest_speed_mbps": 0.0,
-            "internet_speed_profile": {
-                "last_tested_speed_mbps": 0.0,
-                "highest_tested_speed_mbps": 0.0,
-                "lowest_tested_speed_mbps": 0.0,
-                "last_speedtest_timestamp": 0.0
+
+        # Section 3: Download Stats (How the user downloads videos)
+        "3_download_stats": {
+            "single_videos": {
+                # What: User clicked download for a single video.
+                # Source: Download button. 
+                # Goal: Track intention to download.
+                "attempted": 0,
+                # What: Download finished 100%.
+                # Source: Download manager. 
+                # Goal: Track true success.
+                "completed": 0,
+                # What: Download stopped because of an error (like no internet).
+                # Source: Download manager. 
+                # Goal: Track technical problems.
+                "failed": 0,
+                # What: User clicked the stop/cancel button.
+                # Source: Cancel button. 
+                # Goal: Track user behavior.
+                "canceled": 0
+            },
+            "playlists": {
+                # What: User clicked download for a playlist.
+                # Source: Download button. 
+                # Goal: Track intention to download playlists.
+                "attempted": 0,
+                # What: Full playlist finished 100%.
+                # Source: Download manager. 
+                # Goal: Track playlist success.
+                "completed": 0,
+                # What: Playlist stopped because of an error.
+                # Source: Download manager. 
+                # Goal: Track playlist problems.
+                "failed": 0,
+                # What: User canceled the playlist download.
+                # Source: Cancel button. 
+                # Goal: Track user behavior.
+                "canceled": 0,
+                # What: Total count of individual videos downloaded inside all playlists.
+                # Source: Download manager. 
+                # Goal: Track the real volume of videos from playlists.
+                "total_videos_downloaded": 0
+            },
+            "volume": {
+                # What: Total MegaBytes (MB) the user downloaded in their life.
+                # Source: Download manager. 
+                # Goal: Measure data usage.
+                "total_downloaded_mb": 0.0,
+                # What: Total time the user spent downloading (in seconds).
+                # Source: Download manager. 
+                # Goal: Measure time cost.
+                "total_download_time_seconds": 0.0
             },
             "quality_preferences": {
                 "single_videos_exact_resolutions": {
+                    # What: User choices for single video quality.
+                    # Source: UI Dropdown menus. 
+                    # Goal: Know the most popular video quality.
                     "exact_144p": 0, "exact_240p": 0, "exact_360p": 0, 
                     "exact_480p": 0, "exact_720p": 0, "exact_1080p": 0, 
-                    "exact_1440p": 0, "exact_4K": 0, "exact_8K": 0, 
-                    "exact_16K_plus": 0, "single_Audio_Only": 0
+                    "exact_1440p": 0, "exact_4k": 0, "exact_8k": 0, 
+                    "exact_16k_plus": 0, "audio_only": 0
                 },
                 "playlist_presets": {
-                    "playlist_Best_Quality": 0, "playlist_Medium": 0, 
-                    "playlist_Low": 0, "playlist_Audio_Only": 0
+                    # What: User choices for playlist quality.
+                    # Source: UI Dropdown menus. 
+                    # Goal: Know the most popular playlist quality.
+                    "best_quality": 0, "medium": 0, 
+                    "low": 0, "audio_only": 0
                 }
             }
         },
-        "conversion_metrics": {
-            "conversions_completed": 0,
-            "conversions_failed": 0,
-            "conversions_canceled": 0,
+
+        # Section 4: Network Profile (Internet speed data)
+        "4_network_profile": {
+            "download_speeds": {
+                # What: The highest download speed the user ever reached (MegaBits per second).
+                # Source: Download manager. 
+                # Goal: Know how fast the user's internet is.
+                "highest_mbps": 0.0,
+                # What: The lowest download speed the user ever reached.
+                # Source: Download manager. 
+                # Goal: Know how slow the internet can get.
+                "lowest_mbps": 0.0
+            },
+            "speed_test": {
+                # What: Speed result from the manual network test.
+                # Source: Network tester logic. 
+                # Goal: Track manual speed checks.
+                "last_result_mbps": 0.0,
+                # What: Best result from manual tests.
+                # Source: Network tester logic. 
+                # Goal: Know maximum tested speed.
+                "highest_mbps": 0.0,
+                # What: Worst result from manual tests.
+                # Source: Network tester logic. 
+                # Goal: Know minimum tested speed.
+                "lowest_mbps": 0.0,
+                # What: Time of the last manual test.
+                # Source: Network tester logic. 
+                # Goal: Know when the last check happened.
+                "last_tested_timestamp": 0.0
+            }
+        },
+
+        # Section 5: Conversion Stats (FFmpeg operations)
+        "5_conversion_stats": {
+            # What: How many videos were successfully converted to MP4.
+            # Source: FFmpeg logic. 
+            # Goal: Track conversion success.
+            "completed": 0,
+            # What: How many conversions failed to finish.
+            # Source: FFmpeg logic. 
+            # Goal: Track conversion errors.
+            "failed": 0,
+            # What: How many conversions the user canceled.
+            # Source: FFmpeg logic. 
+            # Goal: Track user stops.
+            "canceled": 0,
+            # What: How many times the app skipped conversion because the video is already MP4.
+            # Source: FFmpeg logic. 
+            # Goal: Track smart saving of time.
             "skipped_already_mp4": 0,
-            "speed_mode_ultrafast": 0,
-            "speed_mode_medium": 0,
-            "total_converted_mb": 0.0,
-            "total_conversion_time_seconds": 0.0
+            # What: How many times the user chose fast conversion speed.
+            # Source: UI settings. 
+            # Goal: Track user speed choices.
+            "speed_mode_fast": 0,
+            # What: How many times the user chose slow conversion speed.
+            # Source: UI settings. 
+            # Goal: Track user quality choices.
+            "speed_mode_slow": 0,
+            "volume": {
+                # What: Total MegaBytes of converted videos.
+                # Source: FFmpeg logic. 
+                # Goal: Measure processing volume.
+                "total_converted_mb": 0.0,
+                # What: Total time spent converting videos.
+                # Source: FFmpeg logic. 
+                # Goal: Measure CPU time used.
+                "total_conversion_time_seconds": 0.0
+            }
         },
-        "resilience": {
-            "youtube_blocks_encountered": 0,
-            "network_retries_triggered": 0,
+
+        # Section 6: Resilience and Errors (Network problems)
+        "6_resilience_and_errors": {
+            # What: How many times YouTube blocked the download.
+            # Source: yt-dlp errors. 
+            # Goal: Track YouTube ban rates.
+            "youtube_blocks": 0,
+            # What: How many times the app tried again automatically after internet drop.
+            # Source: Network logic. 
+            # Goal: Measure auto-recovery success.
+            "network_retries": 0,
+            # What: How many times the app warned the user about large files.
+            # Source: UI popups. 
+            # Goal: Track data warnings.
             "data_limit_warnings_shown": 0,
-            # How many times the app fixed a broken or deleted part of the file
-            "schema_repairs_count": 0
+            # What: How many times the app failed to read a link.
+            # Source: yt-dlp errors. 
+            # Goal: Track read errors.
+            "fetch_failures": 0
         },
-        "system": {
+
+        # Section 7: System Hardware (Computer specs)
+        "7_system_hardware": {
+            # What: Windows, Mac, or Linux version.
+            # Source: Python OS module. 
+            # Goal: Know the target operating systems.
             "os_version": "Unknown",
+            # What: Number of CPU cores.
+            # Source: Python OS module. 
+            # Goal: Know PC strength.
             "cpu_cores": 0,
+            # What: The full name of the processor.
+            # Source: OS commands. 
+            # Goal: Know hardware types.
             "cpu_name": "Unknown",
+            # What: Total RAM size in GB.
+            # Source: OS commands. 
+            # Goal: Know memory capacity.
             "ram_gb": "Unknown",
+            # What: The name of the graphic card.
+            # Source: OS commands. 
+            # Goal: Know GPU power.
             "gpu_name": "Unknown",
-            "last_hardware_scan_timestamp": 0.0  # <- New: For 6-months caching logic
+            # What: Time of the last hardware check.
+            # Source: Background scanner. 
+            # Goal: Only check hardware every 6 months.
+            "last_scan_timestamp": 0.0
         }
     }
-
 # ==========================================
 # 5. HARDWARE READERS (CROSS-PLATFORM)
 # ==========================================
@@ -371,22 +609,24 @@ def increment_stat(category, key, amount=1, sub_category=None):
         except Exception as e:
             logging.critical(f"Critical logic error in increment_stat for '{category}->{key}': {str(e)}", exc_info=True)
 
+
 def update_speed_stat(speed_mbps):
     """Check and update the highest and lowest internet speed from downloads."""
     if speed_mbps <= 0:
         return
         
-    with _analytics_lock: # Lock wraps BOTH load and save cleanly
+    with _analytics_lock:
         try:
             data = load_analytics()
-            current_high = data["download_metrics"]["highest_speed_mbps"]
-            current_low = data["download_metrics"]["lowest_speed_mbps"]
+            speeds = data["4_network_profile"]["download_speeds"]
+            current_high = speeds["highest_mbps"]
+            current_low = speeds["lowest_mbps"]
             
             if speed_mbps > current_high:
-                data["download_metrics"]["highest_speed_mbps"] = round(speed_mbps, 2)
+                speeds["highest_mbps"] = round(speed_mbps, 2)
                 
             if current_low == 0.0 or speed_mbps < current_low:
-                data["download_metrics"]["lowest_speed_mbps"] = round(speed_mbps, 2)
+                speeds["lowest_mbps"] = round(speed_mbps, 2)
                 
             save_analytics(data)
 
@@ -394,38 +634,23 @@ def update_speed_stat(speed_mbps):
             logging.error(f"Error saving speed stat: {str(e)}")
 
 def record_speedtest_result(speed_mbps):
-    """
-    Save the independent network speed test result safely.
-    Updates the speed profile using precise Mbps format.
-    """
+    """Save the independent network speed test result safely."""
     if speed_mbps <= 0:
         return
 
     with _analytics_lock:
         try:
             data = load_analytics()
+            profile = data["4_network_profile"]["speed_test"]
             
-            # Defensive check: Initialize sub-dictionary if missing in old files
-            if "internet_speed_profile" not in data["download_metrics"]:
-                data["download_metrics"]["internet_speed_profile"] = {
-                    "last_tested_speed_mbps": 0.0,
-                    "highest_tested_speed_mbps": 0.0,
-                    "lowest_tested_speed_mbps": 0.0,
-                    "last_speedtest_timestamp": 0.0
-                }
-
-            profile = data["download_metrics"]["internet_speed_profile"]
+            profile["last_result_mbps"] = round(speed_mbps, 2)
+            profile["last_tested_timestamp"] = time.time()
             
-            # Save current test data
-            profile["last_tested_speed_mbps"] = round(speed_mbps, 2)
-            profile["last_speedtest_timestamp"] = time.time()
-            
-            # Check and update historical high/low limits
-            if speed_mbps > profile["highest_tested_speed_mbps"]:
-                profile["highest_tested_speed_mbps"] = round(speed_mbps, 2)
+            if speed_mbps > profile["highest_mbps"]:
+                profile["highest_mbps"] = round(speed_mbps, 2)
                 
-            if profile["lowest_tested_speed_mbps"] == 0.0 or speed_mbps < profile["lowest_tested_speed_mbps"]:
-                profile["lowest_tested_speed_mbps"] = round(speed_mbps, 2)
+            if profile["lowest_mbps"] == 0.0 or speed_mbps < profile["lowest_mbps"]:
+                profile["lowest_mbps"] = round(speed_mbps, 2)
                 
             save_analytics(data)
 
@@ -434,61 +659,48 @@ def record_speedtest_result(speed_mbps):
 
 def record_system_info():
     """Smart async hardware scan with caching & lifecycle recording."""
-    import datetime
     import config
 
     with _analytics_lock:
         data = load_analytics()
         
-        # 1. Record First Launch Date (Only if empty)
-        if "first_app_launch_date" not in data["app_lifecycle"] or not data["app_lifecycle"]["first_app_launch_date"]:
-            now_str = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-            data["app_lifecycle"]["first_app_launch_date"] = now_str
-            save_analytics(data)
-            
-        # 2. Check Cache Gate (Failsafe for missing keys in old files)
-        sys_data = data.get("system", {})
-        last_scan_time = sys_data.get("last_hardware_scan_timestamp", 0.0)
+        sys_data = data.get("7_system_hardware", {})
+        last_scan_time = sys_data.get("last_scan_timestamp", 0.0)
         cpu = sys_data.get("cpu_name", "Unknown")
         
         days_passed = (time.time() - last_scan_time) / 86400.0
         
-        # 3. Fast Exit: If we have the data and it's fresh (under 6 months), do NOT block or scan!
+        # Fast Exit: If we have the data and it's fresh (under 6 months), do NOT block or scan!
         if cpu != "Unknown" and days_passed < config.SYSTEM_INFO_CACHE_DAYS:
             return
 
-    # 4. Background Execution: Only runs if data is missing or expired (6 months passed)
+    # Background Execution: Only runs if data is missing or expired (6 months passed)
     def background_scanner():
         time.sleep(5)
         try:
-            # Gather data
             os_ver = f"{platform.system()} {platform.release()}"
             cores = os.cpu_count() or 0
             cpu_name = _get_cpu_name()
             ram = _get_ram_gb()
             gpu = _get_gpu_name()
             
-            # Save data safely
             with _analytics_lock:
                 fresh_data = load_analytics()
-                
-                # Defensive check in case schema is corrupted
-                if "system" not in fresh_data:
-                    fresh_data["system"] = {}
+                if "7_system_hardware" not in fresh_data:
+                    fresh_data["7_system_hardware"] = {}
                     
-                fresh_data["system"]["os_version"] = os_ver
-                fresh_data["system"]["cpu_cores"] = cores
-                fresh_data["system"]["cpu_name"] = cpu_name
-                fresh_data["system"]["ram_gb"] = ram
-                fresh_data["system"]["gpu_name"] = gpu
-                fresh_data["system"]["last_hardware_scan_timestamp"] = time.time()
+                hardware = fresh_data["7_system_hardware"]
+                hardware["os_version"] = os_ver
+                hardware["cpu_cores"] = cores
+                hardware["cpu_name"] = cpu_name
+                hardware["ram_gb"] = ram
+                hardware["gpu_name"] = gpu
+                hardware["last_scan_timestamp"] = time.time()
                 
                 save_analytics(fresh_data)
         except Exception as e:
-            # Save critical errors quietly
             logging.error(f"Background Hardware Scan Failed: {str(e)}")
 
-    # Launch without blocking the UI
     scanner_thread = threading.Thread(target=background_scanner, daemon=True)
     scanner_thread.start()
 
@@ -498,8 +710,44 @@ def record_uptime(start_time_seconds):
     with _analytics_lock:
         try:
             data = load_analytics()
-            data["app_lifecycle"]["total_uptime_minutes"] += round(uptime_minutes, 2)
+            data["1_app_lifecycle"]["total_uptime_minutes"] += round(uptime_minutes, 2)
             save_analytics(data)
         except Exception as e:
-            # Save error quietly but document it
             logging.error(f"Failed to record uptime during shutdown: {str(e)}")
+
+
+
+def record_app_launch():
+    """Record a new app launch, calculate unique days, and set first launch date."""
+    import datetime
+    with _analytics_lock:
+        try:
+            data = load_analytics()
+            now = time.time()
+            
+            # 1. Add 1 to total launches
+            data["1_app_lifecycle"]["total_launches"] += 1
+            
+            # 2. Set first launch dates if they are empty
+            if data["1_app_lifecycle"]["first_app_launch_timestamp"] == 0.0:
+                data["1_app_lifecycle"]["first_app_launch_timestamp"] = now
+                data["1_app_lifecycle"]["first_app_launch_date_str"] = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+            
+            # 3. Calculate unique days active
+            last_active = data["1_app_lifecycle"]["last_active_timestamp"]
+            if last_active == 0.0:
+                # First time ever
+                data["1_app_lifecycle"]["unique_days_active"] += 1
+            else:
+                # Compare dates
+                last_date = datetime.datetime.fromtimestamp(last_active).date()
+                curr_date = datetime.datetime.fromtimestamp(now).date()
+                if last_date != curr_date:
+                    data["1_app_lifecycle"]["unique_days_active"] += 1
+            
+            # 4. Update last active time to now
+            data["1_app_lifecycle"]["last_active_timestamp"] = now
+            
+            save_analytics(data)
+        except Exception as e:
+            logging.error(f"Failed to record app launch: {str(e)}")
