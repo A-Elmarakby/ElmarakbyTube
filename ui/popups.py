@@ -332,7 +332,7 @@ def show_contact_popup(parent_window=None):
     # Record contact click
     try:
         from core.analytics import increment_stat
-        increment_stat("app_lifecycle", "main_contact_btn_clicks", sub_category="support_interactions")
+        increment_stat("1_app_lifecycle", "main_contact_btn_clicks", sub_category="support_interactions")
     except Exception:
         pass
 
@@ -363,7 +363,7 @@ def show_contact_popup(parent_window=None):
         try:
             from core.analytics import increment_stat
             key_name = f"{platform_name}_clicks"
-            increment_stat("app_lifecycle", key_name, sub_category="support_interactions")
+            increment_stat("1_app_lifecycle", key_name, sub_category="support_interactions")
             webbrowser.open(url)
         except Exception as e:
             logging.critical(f"Critical error opening link for {platform_name}: {str(e)}", exc_info=True)
@@ -433,7 +433,7 @@ def show_contact_popup(parent_window=None):
         
         try:
             from core.analytics import increment_stat
-            increment_stat("app_lifecycle", "email_clicks", sub_category="support_interactions")
+            increment_stat("1_app_lifecycle", "email_clicks", sub_category="support_interactions")
         except: pass
         
         return "break"

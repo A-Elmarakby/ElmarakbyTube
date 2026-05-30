@@ -95,9 +95,17 @@ def get_default_schema():
             # Goal: Measure how long the user stays inside the app.
             "total_uptime_minutes": 0.0,
             
-            # What: How many different days the user opened the app.
-            # Source: App startup logic. 
-            # Goal: Know if the user opens the app every day or rarely.
+            # What: How many different calendar days the user opened the app.
+            # Source: App startup logic.
+            # How it works: If the user opens the app 100 times in one day, this stays the same. 
+            #               But if the user opens the app on a new day, this increases by 1.
+            # Goal: Measure if the user comes back every day to use the app (Habit) or just uses it once in a while.
+            # Future Use:
+            # 1. Calculate 'Retention Rate': (unique_days_active / total_days_since_install) * 100.
+            # 2. Daily average launches: (total_launches / unique_days_active). 
+            #    If this is high, the user is a 'Power User' who does many tasks in one visit.
+            # 3. User segments: If unique_days_active > 20 per month, user is a 'Daily User'. 
+            #    If < 5 per month, user is a 'Casual User'.
             "unique_days_active": 0,
 
             # What: The exact time the user last opened the app (Unix Float).
@@ -529,7 +537,7 @@ def load_analytics():
         if json_data and bak_data:
             if json_data != bak_data:
                 logging.warning("Tampering detected! JSON does not match BAK. Restoring backup.")
-                bak_data["resilience"]["schema_repairs_count"] += 1
+                bak_data["0_data_integrity"]["schema_repairs_count"] += 1
                 _analytics_cache = bak_data
                 needs_immediate_save = True
             else:
@@ -537,7 +545,7 @@ def load_analytics():
                 
         elif bak_data and not json_data:
             logging.warning("JSON file missing! Restoring from BAK.")
-            bak_data["resilience"]["schema_repairs_count"] += 1
+            bak_data["0_data_integrity"]["schema_repairs_count"] += 1
             _analytics_cache = bak_data
             needs_immediate_save = True
             

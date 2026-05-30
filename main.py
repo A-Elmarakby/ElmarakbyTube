@@ -22,12 +22,12 @@ try:
     setup_logger()
     
     # Start the Analytics Engine
-    from core.analytics import init_analytics, increment_stat, record_system_info
+    from core.analytics import init_analytics, increment_stat, record_system_info, record_app_launch
     from core.network_tester import start_network_speed_assessment
     
     init_analytics()
-    # Add 1 to total app opens
-    increment_stat("app_lifecycle", "total_launches")
+    # Record full app launch stats (launches, dates, unique days)
+    record_app_launch()
     # Save OS and CPU info
     record_system_info()
 except Exception as e:
@@ -117,7 +117,7 @@ def global_hardware_shortcuts(event):
         valid_keys = [65, 67, 86, 88, 90]
         if event.keycode in valid_keys:
             try:
-                increment_stat("app_lifecycle", "hardware_shortcuts_used")
+                increment_stat("1_app_lifecycle", "hardware_shortcuts_used", sub_category="ui_interactions")
             except Exception:
                 pass
         # --------------------------------------------
@@ -228,7 +228,7 @@ def fetch_all_sizes_worker():
     # --- Analytics: Record valid fetch sizes ---
     # Save this action only if the user selected a video and it really started
     try:
-        increment_stat("search_behavior", "fetch_sizes_clicks")
+        increment_stat("2_search_behavior", "fetch_sizes_clicks")
     except Exception:
         pass
     # -------------------------------------------
@@ -312,7 +312,7 @@ def fetch_video_data():
     # --- Analytics: Record search attempt ---
     try:
         # Add 1 to total search attempts (valid or invalid)
-        increment_stat("search_behavior", "total_links_searched")
+        increment_stat("2_search_behavior", "total_links_searched")
     except Exception:
         pass
     # ----------------------------------------
@@ -330,13 +330,13 @@ def fetch_video_data():
         # We check the actual number of fetched videos to be 100% accurate
         try:
             found_count = len(entries_data)
-            increment_stat("search_behavior", "videos_fetched_successfully", amount=found_count)
+            increment_stat("2_search_behavior", "videos_fetched_successfully", amount=found_count)
             
             # If we found exactly 1 video, it is a single video link (Even with list= in URL)
             if found_count == 1:
-                increment_stat("search_behavior", "single_video_links")
+                increment_stat("2_search_behavior", "single_video_links")
             else:
-                increment_stat("search_behavior", "playlist_links")
+                increment_stat("2_search_behavior", "playlist_links")
         except Exception:
             pass
         # -----------------------------------------------
@@ -347,7 +347,7 @@ def fetch_video_data():
         # --- Analytics: Record bad link error ---
         # Add 1 if the link is broken or wrong
         try:
-            increment_stat("search_behavior", "invalid_links_entered")
+            increment_stat("2_search_behavior", "invalid_links_entered")
         except Exception:
             pass
         # ----------------------------------------
@@ -421,15 +421,16 @@ def _download_process(rows_to_download, quality, save_path):
             if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
                 
-                # --- Analytics: Record overall totals, speed, and consumption safely ---
+# --- Analytics: Record overall totals, speed, and consumption safely ---
                 try:
-                    # 1. Increment standard completion counters
-                    increment_stat("download_metrics", "downloads_completed")
-                    increment_stat("download_metrics", "total_videos_downloaded")
-                    
                     is_playlist = len(state.video_rows) > 1
+                    
+                    # 1. Increment standard completion counters based on type
                     if is_playlist:
-                        increment_stat("download_metrics", "total_playlist_videos_downloaded")
+                        increment_stat("3_download_stats", "completed", sub_category="playlists")
+                        increment_stat("3_download_stats", "total_videos_downloaded", sub_category="playlists")
+                    else:
+                        increment_stat("3_download_stats", "completed", sub_category="single_videos")
                         
                     # 2. Calculate time taken and file size
                     time_taken = time.time() - video_start_time
@@ -438,12 +439,12 @@ def _download_process(rows_to_download, quality, save_path):
                     if file_size_bytes > 0:
                         mb_size = file_size_bytes / (1024.0 * 1024.0)
                         # Save total megabytes downloaded
-                        increment_stat("download_metrics", "total_downloaded_mb", amount=mb_size)
+                        increment_stat("3_download_stats", "total_downloaded_mb", amount=mb_size, sub_category="volume")
                         
                         # 3. Calculate internet speed safely (Only for single videos)
                         if not is_playlist and time_taken > 0:
                             # Save total seconds spent downloading
-                            increment_stat("download_metrics", "total_download_time_seconds", amount=time_taken)
+                            increment_stat("3_download_stats", "total_download_time_seconds", amount=time_taken, sub_category="volume")
                             
                             # Speed formula: Megabytes divided by Seconds
                             speed_mbps = mb_size / time_taken
@@ -509,31 +510,31 @@ def download_worker():
                     # Case A: User is downloading from a Playlist layout
                     if len(state.video_rows) > 1:
                         playlist_map = {
-                            config.QUALITY_BEST: "playlist_Best_Quality",
-                            config.QUALITY_MEDIUM: "playlist_Medium",
-                            config.QUALITY_LOW: "playlist_Low",
-                            config.QUALITY_AUDIO: "playlist_Audio_Only"
+                            config.QUALITY_BEST: "best_quality",
+                            config.QUALITY_MEDIUM: "medium",
+                            config.QUALITY_LOW: "low",
+                            config.QUALITY_AUDIO: "audio_only"
                         }
                         analytics_key = playlist_map.get(quality)
                         if analytics_key:
-                            increment_stat("download_metrics", analytics_key, amount=1, sub_category="playlist_presets")
+                            increment_stat("3_download_stats", analytics_key, amount=1, sub_category="playlist_presets")
                             _current_session_quality_counted = True # Lock it for this selection session!
                     
                     # Case B: User is downloading a Single Video layout
                     else:
                         q_clean = str(quality).lower()
                         if "audio" in q_clean:
-                            increment_stat("download_metrics", "single_Audio_Only", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "144p" in q_clean: increment_stat("download_metrics", "exact_144p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "240p" in q_clean: increment_stat("download_metrics", "exact_240p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "360p" in q_clean: increment_stat("download_metrics", "exact_360p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "480p" in q_clean: increment_stat("download_metrics", "exact_480p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "720p" in q_clean: increment_stat("download_metrics", "exact_720p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "1080p" in q_clean: increment_stat("download_metrics", "exact_1080p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "1440p" in q_clean: increment_stat("download_metrics", "exact_1440p", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "4k" in q_clean: increment_stat("download_metrics", "exact_4K", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "8k" in q_clean: increment_stat("download_metrics", "exact_8K", amount=1, sub_category="single_videos_exact_resolutions")
-                        elif "16k" in q_clean: increment_stat("download_metrics", "exact_16K_plus", amount=1, sub_category="single_videos_exact_resolutions")
+                            increment_stat("3_download_stats", "audio_only", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "144p" in q_clean: increment_stat("3_download_stats", "exact_144p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "240p" in q_clean: increment_stat("3_download_stats", "exact_240p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "360p" in q_clean: increment_stat("3_download_stats", "exact_360p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "480p" in q_clean: increment_stat("3_download_stats", "exact_480p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "720p" in q_clean: increment_stat("3_download_stats", "exact_720p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "1080p" in q_clean: increment_stat("3_download_stats", "exact_1080p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "1440p" in q_clean: increment_stat("3_download_stats", "exact_1440p", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "4k" in q_clean: increment_stat("3_download_stats", "exact_4k", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "8k" in q_clean: increment_stat("3_download_stats", "exact_8k", amount=1, sub_category="single_videos_exact_resolutions")
+                        elif "16k" in q_clean: increment_stat("3_download_stats", "exact_16k_plus", amount=1, sub_category="single_videos_exact_resolutions")
                         
                         _current_session_quality_counted = True # Lock it for this selection session!
             except Exception:
