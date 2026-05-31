@@ -7,6 +7,7 @@ import os
 import sys
 import logging
 import time # Added to calculate total usage time
+import glob
 
 # Save the exact time the app started
 APP_START_TIME = time.time()
@@ -387,9 +388,13 @@ def _download_process(rows_to_download, quality, save_path):
             if status == 'downloading':
                 app.after(0, lambda p=percent: layout.safe_progress_update(r['progress'], p))
                 app.after(0, lambda p=percent: layout.safe_ui_update(r['percent_label'], text=f"{int(p*100)}%"))
-                if r['bytes_size'] == -1 and total_bytes > 0:
+                if r['bytes_size'] <= 0 and total_bytes > 0:
                     size_str = format_size(total_bytes)
                     app.after(0, lambda: layout.safe_ui_update(r['size_label'], text=size_str))
+                    #  Save actual size to memory for Analytics ---
+                    r['bytes_size'] = total_bytes 
+                    # -----------------------------------------------------
+                    
                 if r.get('dl_state') not in ['canceled', 'already_exists']:
                     r['dl_state'] = 'downloading'
                     app.after(0, lambda: layout.safe_ui_update(r['status_label'], text="Downloading...", text_color=config.COLOR_MAGENTA))
@@ -422,38 +427,65 @@ def _download_process(rows_to_download, quality, save_path):
                 row_data['dl_state'] = 'completed'
                 
 # --- Analytics: Record overall totals, speed, and consumption safely ---
+# --- FIX: Bulletproof Analytics Block ---
                 try:
+                    from core.analytics import increment_stat, update_speed_stat
+                    from yt_dlp.utils import sanitize_filename
+                    
                     is_playlist = len(state.video_rows) > 1
                     
-                    # 1. Increment standard completion counters based on type
+                    # 1. Update completed counts safely
+                    global _current_session_playlist_counted
+                    
                     if is_playlist:
-                        increment_stat("3_download_stats", "completed", sub_category="playlists")
+                        # Always count the individual video
                         increment_stat("3_download_stats", "total_videos_downloaded", sub_category="playlists")
+                        
+                        # Only count the playlist 'completed' once per search session
+                        if not _current_session_playlist_counted:
+                            increment_stat("3_download_stats", "completed", sub_category="playlists")
+                            _current_session_playlist_counted = True
                     else:
                         increment_stat("3_download_stats", "completed", sub_category="single_videos")
                         
-                    # 2. Calculate time taken and file size
-                    time_taken = time.time() - video_start_time
-                    file_size_bytes = row_data.get('bytes_size', 0)
+                    # 2. Safely calculate time and volume
+                    time_taken = 0.0
+                    if 'video_start_time' in locals():
+                        time_taken = time.time() - video_start_time
+                        
+                    file_size_bytes = row_data.get('bytes_size', -1)
                     
-                    if file_size_bytes > 0:
+                    # 3. Absolute Fallback: If yt-dlp hid the size, read it directly from the Hard Drive!
+                    if file_size_bytes <= 0:
+                        try:
+                            sanitized = sanitize_filename(row_data['title'])
+                            search_pattern = os.path.join(save_path, f"*{sanitized[:15]}*")
+                            files = glob.glob(search_pattern)
+                            for f in files:
+                                if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']) and not f.endswith('.part'):
+                                    file_size_bytes = os.path.getsize(f)
+                                    row_data['bytes_size'] = file_size_bytes
+                                    break
+                        except Exception as e:
+                            logging.warning(f"Disk check failed: {e}")
+                    
+                    # 4. Save volume and speed if we successfully got the size
+                    if isinstance(file_size_bytes, (int, float)) and file_size_bytes > 0:
                         mb_size = file_size_bytes / (1024.0 * 1024.0)
-                        # Save total megabytes downloaded
                         increment_stat("3_download_stats", "total_downloaded_mb", amount=mb_size, sub_category="volume")
                         
-                        # 3. Calculate internet speed safely (Only for single videos)
                         if not is_playlist and time_taken > 0:
-                            # Save total seconds spent downloading
                             increment_stat("3_download_stats", "total_download_time_seconds", amount=time_taken, sub_category="volume")
-                            
-                            # Speed formula: Megabytes divided by Seconds
-                            speed_mbps = mb_size / time_taken
-                            
-                            # Update the highest and lowest speed records in JSON
-                            from core.analytics import update_speed_stat
-                            update_speed_stat(speed_mbps)
-                except Exception:
-                    pass
+                            try:
+                                speed_mbps = mb_size / time_taken
+                                update_speed_stat(speed_mbps)
+                            except Exception as speed_err:
+                                logging.warning(f"Speed stat bypassed: {speed_err}")
+                                
+                except Exception as e:
+                    import logging
+                    # No more silent crashes! If it fails, it will scream in the log.
+                    logging.error(f"CRASH IN ANALYTICS SUCCESS BLOCK: {e}", exc_info=True)
                 # -----------------------------------------------------------------------
                 
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
@@ -463,6 +495,17 @@ def _download_process(rows_to_download, quality, save_path):
             if state.download_event.is_set():
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = str(e)
+                
+                # --- Analytics: Record Failure ---
+                try:
+                    from core.analytics import increment_stat
+                    if len(state.video_rows) > 1:
+                        increment_stat("3_download_stats", "failed", sub_category="playlists")
+                    else:
+                        increment_stat("3_download_stats", "failed", sub_category="single_videos")
+                except Exception: pass
+                # ---------------------------------
+                
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
 
 def download_worker():
@@ -490,6 +533,16 @@ def download_worker():
 
     try:
         state.download_event.set()
+        
+        # --- Analytics: Record Download Attempt ---
+        try:
+            from core.analytics import increment_stat
+            if len(state.video_rows) > 1:
+                increment_stat("3_download_stats", "attempted", sub_category="playlists")
+            else:
+                increment_stat("3_download_stats", "attempted", sub_category="single_videos")
+        except Exception: pass
+        # ----------------------------------------
         
         if state.download_btn:
             app.after(0, lambda: state.download_btn.configure(text="Cancel Download", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click))
@@ -563,6 +616,16 @@ def on_download_click():
 def on_cancel_download_click():
     if not state.download_event.is_set():
         return
+
+    # --- Analytics: Record Cancelation ---
+    try:
+        from core.analytics import increment_stat
+        if len(state.video_rows) > 1:
+            increment_stat("3_download_stats", "canceled", sub_category="playlists")
+        else:
+            increment_stat("3_download_stats", "canceled", sub_category="single_videos")
+    except Exception: pass
+    # ------------------------------------
 
     state.download_event.clear()
     state.convert_event.clear()
