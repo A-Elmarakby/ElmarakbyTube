@@ -413,6 +413,7 @@ def show_contact_popup(parent_window=None):
     # ----------------------------------------------
 
     # Smart copy function
+    email_tracked_flag = [False]
     def trigger_copy(event=None):
         if event:
             try:
@@ -432,8 +433,10 @@ def show_contact_popup(parent_window=None):
         show_copied_state()
         
         try:
-            from core.analytics import increment_stat
-            increment_stat("1_app_lifecycle", "email_clicks", sub_category="support_interactions")
+            if not email_tracked_flag[0]:
+                from core.analytics import increment_stat
+                increment_stat("1_app_lifecycle", "email_clicks", sub_category="support_interactions")
+                email_tracked_flag[0] = True
         except: pass
         
         return "break"

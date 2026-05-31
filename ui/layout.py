@@ -199,7 +199,7 @@ def setup_context_menu(entry_widget):
             # --- Analytics: Record context menu usage ONLY when an action is taken ---
             try:
                 from core.analytics import increment_stat
-                increment_stat("app_lifecycle", "context_menu_used")
+                increment_stat("1_app_lifecycle", "context_menu_used", sub_category="ui_interactions")
             except Exception:
                 pass
             # -----------------------------------------------------------------------

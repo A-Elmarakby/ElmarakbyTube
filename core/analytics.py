@@ -480,7 +480,18 @@ def _atomic_write(file_path, content_str):
             f.flush()              # Force Python buffer to OS
             os.fsync(f.fileno())   # Force OS buffer to hard disk (Bulletproof)
         
-        os.replace(tmp_path, file_path) # Switch files safely
+        # Retry mechanism to avoid Windows Defender / Antivirus locks
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                os.replace(tmp_path, file_path) # Switch files safely
+                break # Success
+            except PermissionError:
+                time.sleep(0.1) # Wait 100ms for antivirus to release the file
+                if attempt == max_retries - 1:
+                    import logging
+                    logging.error(f"Failed to save atomic file after {max_retries} attempts.")
+                    raise
     except Exception:
         if os.path.exists(tmp_path):
             try: os.remove(tmp_path)
@@ -538,6 +549,7 @@ def load_analytics():
             if json_data != bak_data:
                 logging.warning("Tampering detected! JSON does not match BAK. Restoring backup.")
                 bak_data["0_data_integrity"]["schema_repairs_count"] += 1
+                bak_data["0_data_integrity"]["last_repair_timestamp"] = time.time()
                 _analytics_cache = bak_data
                 needs_immediate_save = True
             else:
@@ -546,6 +558,7 @@ def load_analytics():
         elif bak_data and not json_data:
             logging.warning("JSON file missing! Restoring from BAK.")
             bak_data["0_data_integrity"]["schema_repairs_count"] += 1
+            bak_data["0_data_integrity"]["last_repair_timestamp"] = time.time()
             _analytics_cache = bak_data
             needs_immediate_save = True
             
