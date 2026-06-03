@@ -188,22 +188,32 @@ def get_default_schema():
         # Section 3: Download Stats (How the user downloads videos)
         "3_download_stats": {
             "single_videos": {
-                # What: User clicked download for a single video.
+                # Equation=> Total Attempts = (Completed + Failed + Canceled + Already Exists)
+                
+                # What: User clicked the download button.
                 # Source: Download button. 
                 # Goal: Track intention to download.
                 "attempted": 0,
-                # What: Download finished 100%.
+                
+                # What: Download finished 100% with no errors.
                 # Source: Download manager. 
                 # Goal: Track true success.
                 "completed": 0,
-                # What: Download stopped because of an error (like no internet).
+                
+                # What: Download stopped because of an error.
                 # Source: Download manager. 
                 # Goal: Track technical problems.
                 "failed": 0,
-                # What: User clicked the stop/cancel button.
+                
+                # What: User clicked the cancel button.
                 # Source: Cancel button. 
                 # Goal: Track user behavior.
-                "canceled": 0
+                "canceled": 0,
+                
+                # What: Video is already on the computer. No download needed.
+                # Source: Download manager.
+                # Goal: Track saved time and data.
+                "already_exists": 0
             },
             "playlists": {
                 # What: User clicked download for a playlist.

@@ -423,6 +423,17 @@ def _download_process(rows_to_download, quality, save_path):
             download_single_video(
                 row_data['url'], row_data['title'], save_path, quality, handle_progress, check_cancelled
             )
+            
+            # --- Analytics: Record Already Exists (Single Videos) ---
+            if state.download_event.is_set() and row_data.get('dl_state') == 'already_exists':
+                try:
+                    from core.analytics import increment_stat
+                    if len(state.video_rows) == 1: 
+                        increment_stat("3_download_stats", "already_exists", sub_category="single_videos")
+                except Exception: 
+                    pass
+            # --------------------------------------------------------
+            
             if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
                 row_data['dl_state'] = 'completed'
                 
