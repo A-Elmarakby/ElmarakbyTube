@@ -216,26 +216,27 @@ def get_default_schema():
                 "already_exists": 0
             },
             "playlists": {
+                # --- BATCH LEVEL (The overall operation) ---
+                # Equation 1: Total Attempts = Completed Batches + Failed Batches + Canceled Batches
+                
                 # What: User clicked download for a playlist.
-                # Source: Download button. 
-                # Goal: Track intention to download playlists.
                 "attempted": 0,
-                # What: Full playlist finished 100%.
-                # Source: Download manager. 
-                # Goal: Track playlist success.
+                # What: Playlist finished without app errors.
                 "completed": 0,
-                # What: Playlist stopped because of an error.
-                # Source: Download manager. 
-                # Goal: Track playlist problems.
+                # What: Playlist stopped because of a fatal app error.
                 "failed": 0,
-                # What: User canceled the playlist download.
-                # Source: Cancel button. 
-                # Goal: Track user behavior.
+                # What: User clicked cancel for the playlist.
                 "canceled": 0,
-                # What: Total count of individual videos downloaded inside all playlists.
-                # Source: Download manager. 
-                # Goal: Track the real volume of videos from playlists.
-                "total_videos_downloaded": 0
+                
+                # --- VIDEO LEVEL (Inside the playlist) ---
+                # Equation 2: Total Processed Videos = Downloaded + Already Exists + Failed Videos
+                
+                # What: Number of successfully downloaded videos.
+                "total_videos_downloaded": 0,
+                # What: Number of skipped videos (already on PC).
+                "total_videos_already_exists": 0,
+                # What: Number of individual videos that failed.
+                "total_videos_failed": 0
             },
             "volume": {
                 # What: Total MegaBytes (MB) the user downloaded in their life.

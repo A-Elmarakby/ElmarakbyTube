@@ -374,7 +374,9 @@ def find_downloaded_file(save_path, title):
     except: pass
     return None
 
-def _download_process(rows_to_download, quality, save_path):
+# Added is_playlist_session parameter to fix Bug 5
+def _download_process(rows_to_download, quality, save_path, is_playlist_session):
+    failed_count = 0
     for row_data in rows_to_download:
         if not state.download_event.is_set(): break 
         if not row_data['frame'].winfo_exists(): continue 
@@ -424,101 +426,107 @@ def _download_process(rows_to_download, quality, save_path):
                 row_data['url'], row_data['title'], save_path, quality, handle_progress, check_cancelled
             )
             
-            # --- Analytics: Record Already Exists (Single Videos) ---
-            if state.download_event.is_set() and row_data.get('dl_state') == 'already_exists':
-                try:
-                    from core.analytics import increment_stat
-                    if len(state.video_rows) == 1: 
-                        increment_stat("3_download_stats", "already_exists", sub_category="single_videos")
-                except Exception: 
-                    pass
-            # --------------------------------------------------------
-            
-            if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
-                row_data['dl_state'] = 'completed'
-                
-# --- Analytics: Record overall totals, speed, and consumption safely ---
-# --- FIX: Bulletproof Analytics Block ---
+            # --- Analytics: Record Success and Already Exists ---
+            if state.download_event.is_set() and row_data.get('dl_state') != 'canceled':
                 try:
                     from core.analytics import increment_stat, update_speed_stat
                     from yt_dlp.utils import sanitize_filename
+                    import logging
                     
-                    is_playlist = len(state.video_rows) > 1
-                    
-                    # 1. Update completed counts safely
-                    global _current_session_playlist_counted
+                    # Bug 5 FIX: Use the parameter passed from the Session Manager
+                    is_playlist = is_playlist_session
+                    is_already_exists = (row_data.get('dl_state') == 'already_exists')
                     
                     if is_playlist:
-                        # Always count the individual video
-                        increment_stat("3_download_stats", "total_videos_downloaded", sub_category="playlists")
-                        
-                        # Only count the playlist 'completed' once per search session
-                        if not _current_session_playlist_counted:
-                            increment_stat("3_download_stats", "completed", sub_category="playlists")
-                            _current_session_playlist_counted = True
-                    else:
-                        increment_stat("3_download_stats", "completed", sub_category="single_videos")
-                        
-                    # 2. Safely calculate time and volume
-                    time_taken = 0.0
-                    if 'video_start_time' in locals():
-                        time_taken = time.time() - video_start_time
-                        
-                    file_size_bytes = row_data.get('bytes_size', -1)
-                    
-                    # 3. Absolute Fallback: If yt-dlp hid the size, read it directly from the Hard Drive!
-                    if file_size_bytes <= 0:
-                        try:
-                            sanitized = sanitize_filename(row_data['title'])
-                            search_pattern = os.path.join(save_path, f"*{sanitized[:15]}*")
-                            files = glob.glob(search_pattern)
-                            for f in files:
-                                if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']) and not f.endswith('.part'):
-                                    file_size_bytes = os.path.getsize(f)
-                                    row_data['bytes_size'] = file_size_bytes
-                                    break
-                        except Exception as e:
-                            logging.warning(f"Disk check failed: {e}")
-                    
-                    # 4. Save volume and speed if we successfully got the size
-                    if isinstance(file_size_bytes, (int, float)) and file_size_bytes > 0:
-                        mb_size = file_size_bytes / (1024.0 * 1024.0)
-                        increment_stat("3_download_stats", "total_downloaded_mb", amount=mb_size, sub_category="volume")
-                        
-                        if not is_playlist and time_taken > 0:
-                            increment_stat("3_download_stats", "total_download_time_seconds", amount=time_taken, sub_category="volume")
+                        # VIDEO LEVEL: Count what happened to this specific video
+                        if is_already_exists:
+                            increment_stat("3_download_stats", "total_videos_already_exists", sub_category="playlists")
+                        else:
+                            increment_stat("3_download_stats", "total_videos_downloaded", sub_category="playlists")
+                    # FIX: Removed Single Video 'already_exists' log from Content Worker. The Final Judge will handle it.
+
+                    # Volume & Speed tracking (only if it wasn't already on disk)
+                    if not is_already_exists:
+                        time_taken = 0.0
+                        if 'video_start_time' in locals():
+                            time_taken = time.time() - video_start_time
+                            
+                        file_size_bytes = row_data.get('bytes_size', -1)
+                        if file_size_bytes <= 0:
                             try:
-                                speed_mbps = mb_size / time_taken
-                                update_speed_stat(speed_mbps)
-                            except Exception as speed_err:
-                                logging.warning(f"Speed stat bypassed: {speed_err}")
-                                
+                                sanitized = sanitize_filename(row_data['title'])
+                                search_pattern = os.path.join(save_path, f"*{sanitized[:15]}*")
+                                files = glob.glob(search_pattern)
+                                for f in files:
+                                    if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']) and not f.endswith('.part'):
+                                        file_size_bytes = os.path.getsize(f)
+                                        row_data['bytes_size'] = file_size_bytes
+                                        break
+                            except Exception as e:
+                                logging.warning(f"Disk check failed: {e}")
+                        
+                        if isinstance(file_size_bytes, (int, float)) and file_size_bytes > 0:
+                            mb_size = file_size_bytes / (1024.0 * 1024.0)
+                            increment_stat("3_download_stats", "total_downloaded_mb", amount=mb_size, sub_category="volume")
+                            if not is_playlist and time_taken > 0:
+                                increment_stat("3_download_stats", "total_download_time_seconds", amount=time_taken, sub_category="volume")
+                                try:
+                                    speed_mbps = mb_size / time_taken
+                                    update_speed_stat(speed_mbps)
+                                except Exception as speed_err:
+                                    pass
                 except Exception as e:
                     import logging
-                    # No more silent crashes! If it fails, it will scream in the log.
                     logging.error(f"CRASH IN ANALYTICS SUCCESS BLOCK: {e}", exc_info=True)
-                # -----------------------------------------------------------------------
-                
+            # ----------------------------------------------------
+
+            if state.download_event.is_set() and row_data.get('dl_state') not in ['canceled', 'already_exists', 'failed']:
+                row_data['dl_state'] = 'completed'
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Completed", text_color="#28a745"))
                 app.after(0, lambda r=row_data: layout.safe_progress_update(r['progress'], 1.0))
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+                
         except Exception as e:
+            # Bug 3 FIX: Only count error if the user did NOT cancel
             if state.download_event.is_set():
+                failed_count += 1
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = str(e)
                 
-                # --- Analytics: Record Failure ---
+                # --- Analytics: Record Individual Video Failure ---
                 try:
                     from core.analytics import increment_stat
-                    if len(state.video_rows) > 1:
-                        increment_stat("3_download_stats", "failed", sub_category="playlists")
-                    else:
-                        increment_stat("3_download_stats", "failed", sub_category="single_videos")
+                    # Bug 5 FIX: Use the parameter instead of stale UI counts
+                    if is_playlist_session:
+                        increment_stat("3_download_stats", "total_videos_failed", sub_category="playlists")
                 except Exception: pass
-                # ---------------------------------
+                # --------------------------------------------------
                 
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
 
+    # Return the total errors back to the Session Manager
+    return failed_count
+
+# =========================================================================
+# ANALYTICS ARCHITECTURE V3 (MASTER PLAN)
+# =========================================================================
+# Main Equation: Total Attempts = Completed + Failed + Canceled
+#
+# 1. Separation of Work:
+#    - Content Worker (_download_process): Downloads videos and counts errors.
+#    - Session Manager (download_worker): Starts the job and acts as the "Final Judge".
+#
+# 2. Crash Protection:
+#    - We use '_session_crashed = True' before we start.
+#    - If the app crashes (like memory full), the Judge logs 'failed' (No false success).
+#
+# 3. Playlist Rule:
+#    - If the UI has a playlist, the whole session is a 'playlist' (even if we download 1 video).
+#
+# 4. Single Video 'Already Exists' Rule:
+#    - The Content Worker does not log 'already_exists' for single videos.
+#    - The Final Judge logs it instead of 'completed' to stop double counting.
+# =========================================================================
 def download_worker():
     if state.path_entry is None or state.quality_combo is None: return
     
@@ -542,28 +550,37 @@ def download_worker():
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
 
+    # Business Logic FIX: If the source was a playlist, treat the whole session as a playlist
+    is_playlist_session = len(state.video_rows) > 1
+    category = "playlists" if is_playlist_session else "single_videos"
+    state.active_download_category = category  # Bug 6 FIX: Save category for Force Quit recovery
+    
+    try:
+        from core.analytics import increment_stat
+        # Equation: Total Attempts = Completed + Failed + Canceled
+        increment_stat("3_download_stats", "attempted", sub_category=category)
+    except Exception: pass
+
+    # Define the variable BEFORE the try block to avoid UnboundLocalError on fatal crashes
+    failed_count = 0 
+    # Bug 1 FIX: Assume crash until proven otherwise
+    _session_crashed = True
+
     try:
         state.download_event.set()
-        
-        # --- Analytics: Record Download Attempt ---
-        try:
-            from core.analytics import increment_stat
-            if len(state.video_rows) > 1:
-                increment_stat("3_download_stats", "attempted", sub_category="playlists")
-            else:
-                increment_stat("3_download_stats", "attempted", sub_category="single_videos")
-        except Exception: pass
-        # ----------------------------------------
         
         if state.download_btn:
             app.after(0, lambda: state.download_btn.configure(text="Cancel Download", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_cancel_download_click))
 
         app.after(0, lambda: layout.update_global_status(f"Starting download for {len(selected_rows)} videos...", config.COLOR_MAGENTA, ""))
 
-        _download_process(selected_rows, quality, save_path)
+        # Run Content Worker (Returns the number of failed videos)
+        failed_count = _download_process(selected_rows, quality, save_path, is_playlist_session)
+        
+        # FIX Issue 1: Mark clean exit immediately after the core process finishes
+        _session_crashed = False
 
         if state.download_event.is_set():
-            failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
             
             # --- Analytics: Record strict User ComboBox selections safely ---
             try:
@@ -613,11 +630,25 @@ def download_worker():
                 app.after(0, lambda: config.play_sound("success"))
         else:
             app.after(0, lambda: layout.update_global_status("Downloads canceled by user.", "orange", ""))
-            
+
     finally:
+        # Bug D & Bug 1 FIX: The Final Judge evaluates the session outcome exactly once
+        try:
+            if not state.download_event.is_set():
+                increment_stat("3_download_stats", "canceled", sub_category=category)
+            elif _session_crashed or failed_count > 0:
+                increment_stat("3_download_stats", "failed", sub_category=category)
+            elif not is_playlist_session and len(selected_rows) > 0 and selected_rows[0].get('dl_state') == 'already_exists':
+                # FIX: If it is a single video and already exists, log 'already_exists' INSTEAD of 'completed'
+                increment_stat("3_download_stats", "already_exists", sub_category=category)
+            else:
+                increment_stat("3_download_stats", "completed", sub_category=category)
+        except Exception: pass
+
         state.download_event.clear()
         state.operation_lock.release()
-        
+
+        # Restore the Download button to its normal state after finishing or canceling
         if state.download_btn:
             app.after(0, lambda: state.download_btn.configure(text="Download Selected", state="normal", fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=on_download_click))
 
@@ -627,16 +658,6 @@ def on_download_click():
 def on_cancel_download_click():
     if not state.download_event.is_set():
         return
-
-    # --- Analytics: Record Cancelation ---
-    try:
-        from core.analytics import increment_stat
-        if len(state.video_rows) > 1:
-            increment_stat("3_download_stats", "canceled", sub_category="playlists")
-        else:
-            increment_stat("3_download_stats", "canceled", sub_category="single_videos")
-    except Exception: pass
-    # ------------------------------------
 
     state.download_event.clear()
     state.convert_event.clear()
@@ -658,6 +679,11 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
         app.after(0, lambda: custom_msg_box(messages.TITLE_WARNING, messages.MSG_OPERATION_RUNNING, "warning"))
         return
         
+    # Bug 4 FIX: Setup Convert Session tracking variables
+    conv_attempted = False
+    conv_crashed = True
+    conv_failed_count = 0
+
     try:
         state.convert_event.set()
         
@@ -672,7 +698,40 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
 
             try:
                 app.after(0, lambda: layout.update_global_status("Downloading missing files...", config.COLOR_MAGENTA, ""))
-                _download_process(selected_rows, quality, save_path)
+                
+                # --- SESSION MANAGER (Convert Phase): Log download attempt ---
+                # Business Logic FIX: If the source was a playlist, treat the whole session as a playlist
+                is_playlist_session = len(state.video_rows) > 1
+                dl_category = "playlists" if is_playlist_session else "single_videos"
+                state.active_download_category = dl_category  # Bug 6 FIX: Save category for Force Quit recovery
+                try:
+                    from core.analytics import increment_stat
+                    # Equation: Total Attempts = Completed + Failed + Canceled
+                    increment_stat("3_download_stats", "attempted", sub_category=dl_category)
+                except Exception: pass
+                
+                # FIX: Define the variable BEFORE running the process to ensure it exists
+                dl_failed_count = 0
+                dl_crashed = True
+                
+                # Run Content Worker (Returns the number of failed videos)
+                dl_failed_count = _download_process(selected_rows, quality, save_path, is_playlist_session)
+                dl_crashed = False
+                
+                # --- SESSION MANAGER: Judge the download phase specifically ---
+                try:
+                    if not state.download_event.is_set():
+                        increment_stat("3_download_stats", "canceled", sub_category=dl_category)
+                    elif dl_crashed or dl_failed_count > 0:
+                        increment_stat("3_download_stats", "failed", sub_category=dl_category)
+                    elif not is_playlist_session and len(selected_rows) > 0 and selected_rows[0].get('dl_state') == 'already_exists':
+                        # FIX: Log 'already_exists' for single videos instead of 'completed'
+                        increment_stat("3_download_stats", "already_exists", sub_category=dl_category)
+                    else:
+                        increment_stat("3_download_stats", "completed", sub_category=dl_category)
+                except Exception: pass
+                # --------------------------------------------------------------
+
             finally:
                 state.download_event.clear()
                 if state.download_btn:
@@ -681,6 +740,14 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             if not state.convert_event.is_set(): 
                 app.after(0, lambda: layout.update_global_status("Conversion canceled.", "orange", ""))
                 return
+                
+        # --- SESSION MANAGER: Log conversion attempt ---
+        conv_attempted = True # FIX Issue 2: Set flag unconditionally
+        try:
+            from core.analytics import increment_stat
+            increment_stat("5_conversion_stats", "attempted")
+        except Exception: pass
+        # -----------------------------------------------
                 
         files_to_delete = []
         app.after(0, lambda: layout.update_global_status("Starting conversion...", config.COLOR_CYAN, ""))
@@ -744,12 +811,16 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 break
                 
             except Exception as e:
+                conv_failed_count += 1
                 app.after(0, lambda r=row_data: r['progress'].stop())
                 app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = str(e)
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
                 
+        # FIX Issue 1: Mark clean exit immediately after the core loop finishes
+        conv_crashed = False
+        
         if state.convert_event.is_set():
             failed_count = sum(1 for r in selected_rows if r.get('dl_state') == 'failed')
             if failed_count > 0:
@@ -770,6 +841,17 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             app.after(0, lambda: layout.update_global_status("Conversion stopped by user.", "orange", ""))
 
     finally:
+        # Bug 4 FIX: The Final Judge for conversion stats
+        if conv_attempted:
+            try:
+                if not state.convert_event.is_set():
+                    increment_stat("5_conversion_stats", "canceled")
+                elif conv_crashed or conv_failed_count > 0:
+                    increment_stat("5_conversion_stats", "failed")
+                else:
+                    increment_stat("5_conversion_stats", "completed")
+            except Exception: pass
+
         state.convert_event.clear()
         state.operation_lock.release() 
         
@@ -895,6 +977,18 @@ def on_closing():
             try:
                 from core.analytics import record_uptime
                 record_uptime(APP_START_TIME)
+            except Exception:
+                pass
+
+            # Bug 6 FIX: Recover abandoned sessions on Force Quit
+            try:
+                from core.analytics import increment_stat
+                if state.download_event.is_set():
+                    # Fallback to 'single_videos' if category wasn't saved yet
+                    dl_category = getattr(state, 'active_download_category', 'single_videos')
+                    increment_stat("3_download_stats", "canceled", sub_category=dl_category)
+                if state.convert_event.is_set():
+                    increment_stat("5_conversion_stats", "canceled")
             except Exception:
                 pass
 
