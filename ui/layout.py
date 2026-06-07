@@ -87,6 +87,10 @@ def update_dynamic_totals():
         user_data = load_user_data()
         if not user_data.get("hide_1gb_warning", False):
             show_1gb_warning_dialog()
+            try:
+                from core.analytics import increment_stat
+                increment_stat("6_resilience_and_errors", "data_limit_warnings_shown")
+            except Exception: pass
 
 def toggle_all(is_checked):
     # Check or uncheck all boxes
@@ -329,9 +333,11 @@ def _build_toolbar_section(parent, callbacks):
 
     def on_quality_change(choice):
         for row in state.video_rows:
-            row['bytes_size'] = -1 
+            row['bytes_size'] = -1
             safe_ui_update(row['size_label'], text="N/A", text_color="white")
         update_dynamic_totals()
+        try: callbacks['reset_quality_flag']()
+        except Exception: pass
 
     fetch_action_frame = ctk.CTkFrame(quality_layout, fg_color="transparent")
     fetch_action_frame.pack(side="left", padx=(0, 10))

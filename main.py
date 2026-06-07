@@ -254,6 +254,8 @@ def fetch_all_sizes_worker():
         if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
             app.after(0, lambda: layout.update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
             app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error", custom_height=230))
+            try: increment_stat("6_resilience_and_errors", "youtube_blocks")
+            except Exception: pass
         elif state.fetch_event.is_set():
             blocked_count = sum(1 for r in selected_rows if r['bytes_size'] == 0)
             if blocked_count > 0:
@@ -349,6 +351,7 @@ def fetch_video_data():
         # Add 1 if the link is broken or wrong
         try:
             increment_stat("2_search_behavior", "invalid_links_entered")
+            increment_stat("6_resilience_and_errors", "fetch_failures")
         except Exception:
             pass
         # ----------------------------------------
@@ -683,6 +686,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     conv_attempted = False
     conv_crashed = True
     conv_failed_count = 0
+    conv_skipped_count = 0
 
     try:
         state.convert_event.set()
@@ -741,13 +745,18 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 app.after(0, lambda: layout.update_global_status("Conversion canceled.", "orange", ""))
                 return
                 
-        # --- SESSION MANAGER: Log conversion attempt ---
-        conv_attempted = True # FIX Issue 2: Set flag unconditionally
+        # --- SESSION MANAGER: Log conversion attempt + speed mode ---
+        conv_attempted = True
         try:
             from core.analytics import increment_stat
             increment_stat("5_conversion_stats", "attempted")
+            # Bug C FIX: Track which speed mode the user chose
+            if speed_choice == "fast":
+                increment_stat("5_conversion_stats", "speed_mode_fast")
+            else:
+                increment_stat("5_conversion_stats", "speed_mode_slow")
         except Exception: pass
-        # -----------------------------------------------
+        # -----------------------------------------------------------
                 
         files_to_delete = []
         app.after(0, lambda: layout.update_global_status("Starting conversion...", config.COLOR_CYAN, ""))
@@ -777,6 +786,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                     app.after(0, lambda: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
                     app.after(0, lambda: layout.safe_progress_update(r['progress'], 1.0))
                     app.after(0, lambda: layout.safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
+                    conv_skipped_count += 1
                 elif status == 'audio_file':
                     app.after(0, lambda: r['progress'].stop())
                     app.after(0, lambda: layout.safe_ui_update(r['status_label'], text=messages.STATUS_AUDIO_FILE, text_color="#28a745"))
@@ -797,11 +807,21 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             def check_cancelled():
                 return not state.convert_event.is_set()
 
+            conv_file_start_time = time.time()
             try:
                 converted_file = convert_single_file(input_file, speed_choice, converter_callback, check_cancelled)
                 if converted_file:
                     files_to_delete.append(converted_file)
-                    
+                    # Bug E FIX: Track conversion volume (size + time)
+                    try:
+                        conv_time = time.time() - conv_file_start_time
+                        file_size_bytes = os.path.getsize(input_file) if os.path.exists(input_file) else 0
+                        if file_size_bytes > 0:
+                            increment_stat("5_conversion_stats", "total_converted_mb", amount=file_size_bytes / (1024.0 * 1024.0), sub_category="volume")
+                        if conv_time > 0:
+                            increment_stat("5_conversion_stats", "total_conversion_time_seconds", amount=conv_time, sub_category="volume")
+                    except Exception: pass
+
             except InterruptedError:
                 app.after(0, lambda r=row_data: r['progress'].stop())
                 app.after(0, lambda r=row_data: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
@@ -848,6 +868,8 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                     increment_stat("5_conversion_stats", "canceled")
                 elif conv_crashed or conv_failed_count > 0:
                     increment_stat("5_conversion_stats", "failed")
+                elif conv_skipped_count > 0 and not files_to_delete:
+                    increment_stat("5_conversion_stats", "skipped_already_mp4")
                 else:
                     increment_stat("5_conversion_stats", "completed")
             except Exception: pass

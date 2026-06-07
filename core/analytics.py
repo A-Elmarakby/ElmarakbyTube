@@ -302,8 +302,12 @@ def get_default_schema():
 
         # Section 5: Conversion Stats (FFmpeg operations)
         "5_conversion_stats": {
+            # What: How many conversion sessions the user started.
+            # Source: Convert button logic.
+            # Goal: Measure total conversion activity.
+            "attempted": 0,
             # What: How many videos were successfully converted to MP4.
-            # Source: FFmpeg logic. 
+            # Source: FFmpeg logic.
             # Goal: Track conversion success.
             "completed": 0,
             # What: How many conversions failed to finish.
