@@ -239,13 +239,23 @@ def get_default_schema():
                 "total_videos_failed": 0
             },
             "volume": {
-                # What: Total MegaBytes (MB) the user downloaded in their life.
-                # Source: Download manager. 
-                # Goal: Measure data usage.
+                # What: MB downloaded for single videos only.
+                # Source: Download manager. Goal: Enable accurate speed calculation.
+                "single_videos_downloaded_mb": 0.0,
+                # What: Total download time for single videos only (per-video timer, no gaps).
+                # Source: Download manager. Goal: single_mb / single_time * 8 = Mbps speed.
+                "single_videos_download_time_seconds": 0.0,
+                # What: MB downloaded for playlist videos only.
+                # Source: Download manager. Goal: Track playlist data usage.
+                "playlists_downloaded_mb": 0.0,
+                # What: Total download time for playlist videos (per-video timer, reference only).
+                # Source: Download manager. Goal: Measure playlist processing time.
+                "playlists_download_time_seconds": 0.0,
+                # What: Combined MB across all downloads (single + playlist).
+                # Source: Download manager. Goal: Total data usage.
                 "total_downloaded_mb": 0.0,
-                # What: Total time the user spent downloading (in seconds).
-                # Source: Download manager. 
-                # Goal: Measure time cost.
+                # What: Combined download time across all downloads.
+                # Source: Download manager. Goal: Total time spent downloading.
                 "total_download_time_seconds": 0.0
             },
             "quality_preferences": {
@@ -321,7 +331,7 @@ def get_default_schema():
             # What: How many times the app skipped conversion because the video is already MP4.
             # Source: FFmpeg logic. 
             # Goal: Track smart saving of time.
-            "skipped_already_mp4": 0,
+            "skipped": 0,
             # What: How many times the user chose fast conversion speed.
             # Source: UI settings. 
             # Goal: Track user speed choices.

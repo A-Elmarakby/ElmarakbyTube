@@ -90,7 +90,7 @@ Writes use temp file + `os.replace()` (atomic, crash-safe). In-memory cache uses
 3_download_stats          — single_videos / playlists (attempted, completed, failed, canceled,
                              already_exists, speed, volume, quality breakdown)
 4_network_stats           — speed test results
-5_conversion_stats        — attempted, completed, failed, canceled, skipped_already_mp4,
+5_conversion_stats        — attempted, completed, failed, canceled, skipped,
                              speed_mode_fast/slow, volume (total_converted_mb, total_conversion_time_seconds)
 6_resilience_and_errors   — youtube_blocks, fetch_failures, data_limit_warnings_shown
 7_hardware_and_system     — CPU, RAM, GPU, OS (cached 180 days)
@@ -138,14 +138,17 @@ increment_stat("5_conversion_stats", "total_converted_mb",
 
 ## Playlist Speed / Time Tracking (Intentional Design Decision)
 
-Single-video downloads track `time_taken` and `avg_speed_mbps`. **Playlist sessions deliberately do NOT track speed/time.** The reason: yt-dlp initialization, filesystem checks, and gaps between videos in a playlist inflate elapsed time and deflate apparent speed. The measured speed would be meaningless. Speed data is collected from individual single-video downloads + the Cloudflare speed test.
+Single-video downloads track `time_taken`, `avg_speed_mbps`, and contribute to `single_videos_downloaded_mb` / `single_videos_download_time_seconds`. **Playlist sessions do NOT feed the speed calculation.** Speed data (`download_speeds`) is sourced only from single-video downloads + the Cloudflare speed test.
 
-The guard in `_download_process`:
-```python
-if not is_playlist and time_taken > 0:
-    # record speed/time
+**However**, playlist downloads DO track per-video volume time in `playlists_download_time_seconds`. This is safe because `video_start_time` resets per video in the loop — inter-video gaps are NOT included. Only yt-dlp init overhead per video is included (same overhead that exists in single-video tracking).
+
+`playlists_download_time_seconds` is for data-volume reference only. Never use it to derive speed.
+
+The volume section in `3_download_stats`:
 ```
-This is intentional. Do not remove it.
+single_videos_downloaded_mb / single_videos_download_time_seconds × 8  →  Mbps (matches download_speeds)
+playlists_downloaded_mb / playlists_download_time_seconds              →  NOT a valid speed metric
+```
 
 ---
 

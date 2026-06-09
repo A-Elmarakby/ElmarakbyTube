@@ -470,14 +470,27 @@ def _download_process(rows_to_download, quality, save_path, is_playlist_session)
                         
                         if isinstance(file_size_bytes, (int, float)) and file_size_bytes > 0:
                             mb_size = file_size_bytes / (1024.0 * 1024.0)
+
+                            # Combined totals (all downloads)
                             increment_stat("3_download_stats", "total_downloaded_mb", amount=mb_size, sub_category="volume")
-                            if not is_playlist and time_taken > 0:
+                            if time_taken > 0:
                                 increment_stat("3_download_stats", "total_download_time_seconds", amount=time_taken, sub_category="volume")
-                                try:
-                                    speed_mbps = mb_size / time_taken
-                                    update_speed_stat(speed_mbps)
-                                except Exception as speed_err:
-                                    pass
+
+                            if is_playlist:
+                                # Playlist segment (time is per-video, no inter-video gaps)
+                                increment_stat("3_download_stats", "playlists_downloaded_mb", amount=mb_size, sub_category="volume")
+                                if time_taken > 0:
+                                    increment_stat("3_download_stats", "playlists_download_time_seconds", amount=time_taken, sub_category="volume")
+                            else:
+                                # Single video segment + speed tracking
+                                increment_stat("3_download_stats", "single_videos_downloaded_mb", amount=mb_size, sub_category="volume")
+                                if time_taken > 0:
+                                    increment_stat("3_download_stats", "single_videos_download_time_seconds", amount=time_taken, sub_category="volume")
+                                    try:
+                                        speed_mbps = (mb_size * 8) / time_taken  # Mbps: bits ÷ (seconds × 1M)
+                                        update_speed_stat(speed_mbps)
+                                    except Exception as speed_err:
+                                        pass
                 except Exception as e:
                     import logging
                     logging.error(f"CRASH IN ANALYTICS SUCCESS BLOCK: {e}", exc_info=True)
@@ -687,12 +700,24 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
     conv_crashed = True
     conv_failed_count = 0
     conv_skipped_count = 0
+    files_to_delete = []
 
     try:
         state.convert_event.set()
         
         if state.convert_btn:
             app.after(0, lambda: state.convert_btn.configure(text="Stop Convert", fg_color=config.COLOR_RED, hover_color=config.COLOR_RED_HOVER, command=on_stop_convert_click))
+
+        # Record the attempt right away so cancellation during download is still counted
+        conv_attempted = True
+        try:
+            from core.analytics import increment_stat
+            increment_stat("5_conversion_stats", "attempted")
+            if speed_choice == "fast":
+                increment_stat("5_conversion_stats", "speed_mode_fast")
+            else:
+                increment_stat("5_conversion_stats", "speed_mode_slow")
+        except Exception: pass
 
         if do_download_first:
             state.download_event.set()
@@ -745,20 +770,6 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 app.after(0, lambda: layout.update_global_status("Conversion canceled.", "orange", ""))
                 return
                 
-        # --- SESSION MANAGER: Log conversion attempt + speed mode ---
-        conv_attempted = True
-        try:
-            from core.analytics import increment_stat
-            increment_stat("5_conversion_stats", "attempted")
-            # Bug C FIX: Track which speed mode the user chose
-            if speed_choice == "fast":
-                increment_stat("5_conversion_stats", "speed_mode_fast")
-            else:
-                increment_stat("5_conversion_stats", "speed_mode_slow")
-        except Exception: pass
-        # -----------------------------------------------------------
-                
-        files_to_delete = []
         app.after(0, lambda: layout.update_global_status("Starting conversion...", config.COLOR_CYAN, ""))
         
         for row_data in selected_rows:
@@ -767,6 +778,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             
             input_file = find_downloaded_file(save_path, row_data['title'])
             if not input_file:
+                conv_failed_count += 1
                 row_data['dl_state'] = 'failed'
                 row_data['error_msg'] = "File not found in the save path."
                 app.after(0, lambda r=row_data: layout.safe_ui_update(r['status_label'], text="Failed", text_color=config.COLOR_RED, font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "underline"), cursor="hand2"))
@@ -778,8 +790,9 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
             app.after(0, lambda r=row_data: r['progress'].start())
 
             def converter_callback(status, r=row_data):
+                nonlocal conv_skipped_count
                 if not r['frame'].winfo_exists(): return
-                
+
                 if status == 'already_mp4':
                     app.after(0, lambda: r['progress'].stop())
                     app.after(0, lambda: layout.safe_ui_update(r['status_label'], text=messages.STATUS_ALREADY_MP4, text_color="#28a745"))
@@ -792,6 +805,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                     app.after(0, lambda: layout.safe_ui_update(r['status_label'], text=messages.STATUS_AUDIO_FILE, text_color="#28a745"))
                     app.after(0, lambda: r['progress'].configure(mode="determinate", progress_color=config.COLOR_MAGENTA))
                     app.after(0, lambda: layout.safe_progress_update(r['progress'], 1.0))
+                    conv_skipped_count += 1
                     app.after(0, lambda: layout.safe_ui_update(r['percent_label'], text="100%", text_color="#28a745"))
                 elif status == 'started_remux':
                     app.after(0, lambda: layout.update_global_status(messages.STATUS_CONVERTING_REMUX, config.COLOR_CYAN, ""))
@@ -869,7 +883,7 @@ def convert_worker(speed_choice, selected_rows, save_path, quality, do_download_
                 elif conv_crashed or conv_failed_count > 0:
                     increment_stat("5_conversion_stats", "failed")
                 elif conv_skipped_count > 0 and not files_to_delete:
-                    increment_stat("5_conversion_stats", "skipped_already_mp4")
+                    increment_stat("5_conversion_stats", "skipped")
                 else:
                     increment_stat("5_conversion_stats", "completed")
             except Exception: pass
@@ -943,8 +957,8 @@ def on_stop_convert_click():
                 state.convert_btn.configure(state="normal") 
                 
         if choice:
-            state.convert_event.clear() 
-            if state.convert_btn: 
+            state.convert_event.clear()
+            if state.convert_btn:
                 state.convert_btn.configure(text="Convert to MP4", fg_color=config.COLOR_CYAN, hover_color=config.COLOR_CYAN_HOVER, command=on_convert_click)
             layout.update_global_status("Conversion canceled. Download will continue.", "orange", "")
         return
