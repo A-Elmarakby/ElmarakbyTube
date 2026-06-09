@@ -134,6 +134,8 @@ STATUS_CONNECTING = "Connecting to YouTube... Please wait."
 STATUS_LOADING = "Loading..."
 STATUS_SEARCH_FAILED = "Search Failed."
 UNKNOWN_TITLE = "Unknown Title"
+# Shown in red when a playlist contains private/deleted videos that were hidden
+STATUS_UNAVAILABLE_HIDDEN = "Done. {count} unavailable video(s) (private/deleted) were hidden from the list."
 
 # ------------------------------------------
 # 9. Conversion Status Messages

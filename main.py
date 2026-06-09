@@ -280,23 +280,33 @@ def on_stop_fetch_click():
     state.fetch_event.clear()
     layout.update_global_status("Stopping fetch... please wait.", "orange", "")
 
-def render_chunk(entries_data, current_idx, qualities, chunk_size=config.RENDER_CHUNK_SIZE):
+def render_chunk(entries_data, current_idx, qualities, chunk_size=config.RENDER_CHUNK_SIZE, skipped_unavailable=0):
     end_idx = min(current_idx + chunk_size, len(entries_data))
-    
+
     for i in range(current_idx, end_idx):
         data = entries_data[i]
-        layout.add_video_row(data['idx'], data['title'], data['dur'], data['url'])
-        
+        # Defensive net: one bad row must never break the render chain and halt the
+        # rest of the playlist. Log it and keep going.
+        try:
+            layout.add_video_row(data['idx'], data['title'], data['dur'], data['url'])
+        except Exception as row_err:
+            logging.error(f"Skipped a row that failed to render (idx={data.get('idx')}): {row_err}")
+
     app.after(0, lambda: layout.update_global_status(f"Rendering videos... ({end_idx}/{len(entries_data)})", config.COLOR_CYAN, ""))
 
     if end_idx < len(entries_data):
-        app.after(10, lambda: render_chunk(entries_data, end_idx, qualities, chunk_size))
+        app.after(10, lambda: render_chunk(entries_data, end_idx, qualities, chunk_size, skipped_unavailable))
     else:
         if state.quality_combo:
             state.quality_combo.configure(values=qualities)
             if qualities: state.quality_combo.set(qualities[0])
-        app.after(0, layout.update_dynamic_totals) 
-        app.after(0, lambda: layout.update_global_status("Data fetched successfully. Ready to use.", "#28a745", ""))
+        app.after(0, layout.update_dynamic_totals)
+        # Warn (in red) if the playlist had private/deleted videos we hid from the list
+        if skipped_unavailable > 0:
+            warn_text = messages.STATUS_UNAVAILABLE_HIDDEN.format(count=skipped_unavailable)
+            app.after(0, lambda: layout.update_global_status(warn_text, config.COLOR_RED, ""))
+        else:
+            app.after(0, lambda: layout.update_global_status("Data fetched successfully. Ready to use.", "#28a745", ""))
 
 def fetch_video_data():
     if state.url_entry is None: return
@@ -326,8 +336,8 @@ def fetch_video_data():
         app.after(0, lambda: state.quality_combo.set(messages.STATUS_LOADING))
 
     try:
-        entries_data, qualities = get_video_info(url)
-        app.after(0, lambda: render_chunk(entries_data, 0, qualities))
+        entries_data, qualities, skipped_unavailable = get_video_info(url)
+        app.after(0, lambda: render_chunk(entries_data, 0, qualities, skipped_unavailable=skipped_unavailable))
         
         # --- Analytics: Record success and link type ---
         # We check the actual number of fetched videos to be 100% accurate

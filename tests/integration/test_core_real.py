@@ -20,7 +20,7 @@ def anti_ban_delay():
 class TestRealCoreModules:
     
     def test_real_fetcher_gets_correct_data(self):
-        entries, qualities = get_video_info(SHORT_VIDEO_URL)
+        entries, qualities, skipped_unavailable = get_video_info(SHORT_VIDEO_URL)
         assert len(entries) > 0, "No entries returned from fetcher"
         
         video = entries[0]

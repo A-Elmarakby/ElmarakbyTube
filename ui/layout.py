@@ -141,11 +141,12 @@ def add_video_row(index, title, duration, vid_url, status="Ready", status_color=
     ctk.CTkLabel(row, text=str(index), width=30).pack(side="left", padx=(5, 0))
     
     title_entry = ctk.CTkEntry(row, width=250, fg_color="transparent", border_width=0, text_color="white", font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN))
-    title_entry.insert(0, title)
+    # Defensive: always coerce to str() so a None/odd value can never freeze the UI
+    title_entry.insert(0, str(title))
     title_entry.configure(state="readonly")
     title_entry.pack(side="left")
 
-    ctk.CTkLabel(row, text=duration, width=70).pack(side="left")
+    ctk.CTkLabel(row, text=str(duration), width=70).pack(side="left")
     
     size_lbl = ctk.CTkLabel(row, text="N/A", width=80)
     size_lbl.pack(side="left")

@@ -13,6 +13,35 @@ import messages
 STANDARD_RESOLUTIONS = [8640, 4320, 2160, 1440, 1080, 720, 480, 360, 240, 144]
 
 
+# ==========================================
+# UNAVAILABLE VIDEO DETECTION
+# ==========================================
+# yt-dlp returns private/deleted/blocked videos inside a flat playlist either as an
+# empty entry, with a missing (None) title, or with a bracketed placeholder title
+# like "[Private video]". None of these can be downloaded, so we hide them from the
+# list (and count them to warn the user). yt-dlp uses English placeholders regardless
+# of the system locale, so matching these exact markers is reliable.
+_UNAVAILABLE_TITLE_MARKERS = {
+    "[private video]",
+    "[deleted video]",
+    "[unavailable video]",
+    "[removed video]",
+}
+
+def _is_unavailable(entry) -> bool:
+    """True if a playlist entry is a private/deleted/blocked video we should hide."""
+    if not entry:
+        return True
+    title = entry.get('title')
+    if not title:
+        return True
+    if str(title).strip().lower() in _UNAVAILABLE_TITLE_MARKERS:
+        return True
+    # If yt-dlp populated availability (rare in flat mode), respect clearly-blocked states
+    if entry.get('availability') in ('private', 'needs_auth'):
+        return True
+    return False
+
 
 def _get_short_side(fmt: dict) -> int | None:
     """
@@ -122,12 +151,21 @@ def get_video_info(url):
 
         qualities = []
         entries_data = []
+        skipped_unavailable = 0  # Count of private/deleted videos we hide from the list
 
         # 4. Handle playlist link
         if 'entries' in info:
-            for idx, entry in enumerate(info['entries'], start=1):
-                # Get title or use default if missing
-                title = entry.get('title', messages.UNKNOWN_TITLE)
+            display_idx = 0  # Sequential number for valid videos only (prevents index gaps)
+            for entry in info['entries']:
+                # Skip private/deleted/blocked videos (None title or "[Private video]"
+                # placeholders). They cannot be downloaded and would otherwise break the
+                # UI render. We count them to warn the user in the status bar.
+                if _is_unavailable(entry):
+                    skipped_unavailable += 1
+                    continue
+
+                display_idx += 1
+                title = entry.get('title')
                 # Format the duration
                 dur = format_duration(entry.get('duration', 0))
                 # Get video URL; reconstruct from id if the direct url is missing
@@ -137,7 +175,7 @@ def get_video_info(url):
 
                 # Save video data to the list
                 entries_data.append({
-                    'idx': idx,
+                    'idx': display_idx,
                     'title': title,
                     'dur': dur,
                     'url': vid_url
@@ -148,7 +186,7 @@ def get_video_info(url):
 
         # 5. Handle single video link
         else:
-            title = info.get('title', messages.UNKNOWN_TITLE)
+            title = info.get('title') or messages.UNKNOWN_TITLE
             dur = format_duration(info.get('duration', 0))
             vid_url = info.get('webpage_url', url)
 
@@ -172,4 +210,4 @@ def get_video_info(url):
 
         # 6. Add "Select Quality" at the top, then return.
         qualities.insert(0, "Select Quality")
-        return entries_data, qualities
+        return entries_data, qualities, skipped_unavailable
