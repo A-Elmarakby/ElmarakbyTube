@@ -41,29 +41,67 @@ def get_ydl_format_string(quality: str) -> str:
     # 4. Fallback if something goes wrong.
     return 'bestvideo+bestaudio/best'
 
+def _record_network_retry(msg):
+    """Count each automatic yt-dlp retry attempt for resilience analytics.
+    yt-dlp may send 'Retrying (1/3)...' to either the debug or warning channel
+    depending on the version, so we check both. Each message hits only one
+    channel, so there is no double-count."""
+    if "retrying" in msg.lower():
+        try:
+            from core.analytics import increment_stat
+            increment_stat("6_resilience_and_errors", "network_retries")
+        except Exception:
+            pass
+
+# Unambiguous YouTube-block signatures only (rate-limit / bot challenge).
+# We deliberately exclude vague messages like "video unavailable" so we do
+# not mis-attribute a deleted/private video as a block.
+_YT_BLOCK_MARKERS = (
+    "sign in to confirm you're not a bot",
+    "sign in to confirm youre not a bot",
+    "http error 429",
+    "too many requests",
+)
+
+def _record_youtube_block(msg):
+    """Count YouTube blocks that happen during the DOWNLOAD phase.
+    The fetch (size) phase is counted separately in main.py when fetching
+    auto-stops after MAX_CONSECUTIVE_ERRORS, so there is no double-count:
+    these are two different phases of the app."""
+    low = msg.lower()
+    if any(marker in low for marker in _YT_BLOCK_MARKERS):
+        try:
+            from core.analytics import increment_stat
+            increment_stat("6_resilience_and_errors", "youtube_blocks")
+        except Exception:
+            pass
+
 class DownloadLogger:
     # A simple tool to check if the file is already downloaded
     def __init__(self, callback):
         self.callback = callback
-        
+
     def debug(self, msg):
         if config.SHOW_TERMINAL_LOGS: print(msg)
-        
+
         # Catch yt-dlp retries and network drops (they are sent as debug messages)
         msg_lower = msg.lower()
         if "retrying" in msg_lower or "giving up" in msg_lower:
             logging.warning(f"[yt-dlp Network Drop] {msg}")
+        _record_network_retry(msg)
 
         # If yt-dlp says it is already downloaded, tell the main file using the walkie-talkie
         if "has already been downloaded" in msg or "already exists" in msg:
             self.callback('already_exists', 1.0, 0)
-            
-    def warning(self, msg): 
+
+    def warning(self, msg):
         logging.warning(f"[yt-dlp] {msg}") # Save to file
+        _record_network_retry(msg)
         if config.SHOW_TERMINAL_LOGS: print(msg)
         
-    def error(self, msg): 
+    def error(self, msg):
         logging.error(f"[yt-dlp] {msg}") # Save to file
+        _record_youtube_block(msg)
         if config.SHOW_TERMINAL_LOGS: print(msg)
 
 def download_single_video(url, title, save_path, quality, progress_callback, is_cancelled):

@@ -79,7 +79,7 @@ SOCKET_TIMEOUT = 15
 FETCH_RETRIES = 3
 
 # Number of times to retry a download if the connection drops mid-way
-DOWNLOAD_RETRIES = 5
+DOWNLOAD_RETRIES = 7
 
 # ==========================================
 # 4. DATA STORAGE (Saving user data)

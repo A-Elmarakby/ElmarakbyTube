@@ -64,10 +64,10 @@ Session Manager (download_worker)
 
 ### State and Locks
 
-- `state.operation_lock` — `threading.RLock()`, acquired for ALL analytics operations
+- `state.operation_lock` — `threading.Lock()` (plain, NOT re-entrant), prevents overlapping fetch/download/convert operations. Analytics thread-safety is a *separate* lock: `_analytics_lock = threading.RLock()` inside `core/analytics.py`, acquired for every `increment_stat` / `save_analytics`.
 - `state.fetch_event` — `threading.Event()`, set to signal fetch cancellation
 - `state.video_rows` — list of dicts, one per video row widget
-- `state.active_download_category` — saved before download so crash recovery knows what was running
+- `state.active_download_category` — NOT declared in `state.py`; set dynamically on the `state` module before download so Force-Quit crash recovery knows what was running (read with a `getattr(state, 'active_download_category', 'single_videos')` fallback)
 
 ---
 

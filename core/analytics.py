@@ -146,9 +146,14 @@ def get_default_schema():
                 "github_clicks": 0,
                 
                 # What: How many times the user clicked the Email icon (only one count per popup).
-                # Source: UI buttons. 
+                # Source: UI buttons.
                 # Goal: Track email support usage without fake spam counts.
-                "email_clicks": 0
+                "email_clicks": 0,
+
+                # What: How many times the user clicked "Open in Gmail" (only one count per popup open).
+                # Source: UI buttons.
+                # Goal: Track Gmail compose usage without fake spam counts.
+                "open_in_gmail_clicks": 0
             }
         },
 

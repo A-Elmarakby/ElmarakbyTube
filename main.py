@@ -357,11 +357,20 @@ def fetch_video_data():
     except Exception as e:
         logging.error(f"Search Failed for URL '{url}'. Reason: {str(e)}") # Save broken link error
         
-        # --- Analytics: Record bad link error ---
-        # Add 1 if the link is broken or wrong
+        # --- Analytics: Separate network failures from genuinely invalid links ---
+        # fetch_failures = ANY failed read (superset). invalid_links_entered counts
+        # ONLY when the link itself is bad, NOT when the internet/network dropped.
+        err = str(e).lower()
+        network_markers = (
+            "getaddrinfo", "timed out", "timeout", "connection", "temporary failure",
+            "urlopen", "unable to download webpage", "[errno", "ssl", "reset by peer",
+            "network is unreachable", "10054", "10060",
+        )
+        is_network = any(m in err for m in network_markers)
         try:
-            increment_stat("2_search_behavior", "invalid_links_entered")
             increment_stat("6_resilience_and_errors", "fetch_failures")
+            if not is_network:
+                increment_stat("2_search_behavior", "invalid_links_entered")
         except Exception:
             pass
         # ----------------------------------------
@@ -378,8 +387,10 @@ def find_downloaded_file(save_path, title):
         p = os.path.join(save_path, f"{sanitized}{ext}")
         if os.path.exists(p): return p
     try:
-        safe_prefix = sanitized[:15] 
-        search_pattern = os.path.join(save_path, f"*{safe_prefix}*")
+        safe_prefix = sanitized[:15]
+        # Escape glob specials ([], *, ?) so titles like "[Official Video]"
+        # don't break the match. The outer * wildcards stay literal.
+        search_pattern = os.path.join(glob.escape(save_path), f"*{glob.escape(safe_prefix)}*")
         files = glob.glob(search_pattern)
         for f in files:
             if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']) and not f.endswith('.part'):
@@ -468,7 +479,8 @@ def _download_process(rows_to_download, quality, save_path, is_playlist_session)
                         if file_size_bytes <= 0:
                             try:
                                 sanitized = sanitize_filename(row_data['title'])
-                                search_pattern = os.path.join(save_path, f"*{sanitized[:15]}*")
+                                # Escape glob specials so bracketed titles still match.
+                                search_pattern = os.path.join(glob.escape(save_path), f"*{glob.escape(sanitized[:15])}*")
                                 files = glob.glob(search_pattern)
                                 for f in files:
                                     if any(f.endswith(e) for e in ['.mkv', '.webm', '.mp4', '.m4a', '.mp3']) and not f.endswith('.part'):

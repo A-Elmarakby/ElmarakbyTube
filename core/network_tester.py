@@ -21,13 +21,15 @@ def run_background_speedtest(app=None):
         # 1. Check the 24-hour cache safety gate first using central config constant
         data = load_analytics()
         current_time = time.time()
-        
-        if "download_metrics" in data and "internet_speed_profile" in data["download_metrics"]:
-            last_run = data["download_metrics"]["internet_speed_profile"].get("last_speedtest_timestamp", 0.0)
-            
-            # Use centralized interval constant (86400 seconds)
-            if (current_time - last_run) < config.NET_TEST_INTERVAL_SECONDS:
-                return # Skip testing to protect user internet package data limit
+
+        # Read the SAME path that record_speedtest_result() writes to (schema v2).
+        # The old path "download_metrics.internet_speed_profile" no longer exists, so
+        # the gate never engaged and a fresh speed test ran on every single launch.
+        last_run = data.get("4_network_profile", {}).get("speed_test", {}).get("last_tested_timestamp", 0.0)
+
+        # Use centralized interval constant (86400 seconds)
+        if (current_time - last_run) < config.NET_TEST_INTERVAL_SECONDS:
+            return # Skip testing to protect user internet package data limit
 
         # 2. Prepare the high-speed chunk download using config values
         test_url = config.NET_SPEED_TEST_URL

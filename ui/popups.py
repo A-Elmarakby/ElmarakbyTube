@@ -8,6 +8,7 @@ import customtkinter as ctk
 import os
 import sys
 import json
+import logging
 import webbrowser
 import re
 from PIL import Image
@@ -348,6 +349,7 @@ def show_contact_popup(parent_window=None):
     
     dialog._email_expanded = False
     dialog._reset_timer = None # Timer to reset button colors
+    dialog._gmail_tracked = False # Count "Open in Gmail" once per popup open (reopen = new count)
     
     lbl = ctk.CTkLabel(dialog, text=apply_bidi(messages.MSG_CONTACT_WHERE), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"))
     lbl.pack(pady=(20, 15))
@@ -492,8 +494,19 @@ def show_contact_popup(parent_window=None):
                 body = urllib.parse.quote(messages.MSG_GMAIL_BODY)
                 gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_address}&su={subject}&body={body}"
                 
+                # Count "Open in Gmail" once per popup open; reopening the popup counts again.
+                # Always opens Gmail on every click, but only records the intent once.
+                def handle_gmail_click(u=gmail_url):
+                    try:
+                        if not getattr(dialog, '_gmail_tracked', False):
+                            increment_stat("1_app_lifecycle", "open_in_gmail_clicks", sub_category="support_interactions")
+                            dialog._gmail_tracked = True
+                        webbrowser.open(u)
+                    except Exception as e:
+                        logging.critical(f"Critical error opening Gmail: {str(e)}", exc_info=True)
+
                 # Make button, put image on the left side
-                gmail_btn = ctk.CTkButton(email_expansion_frame, height=35, text="", font=btn_font, text_color="white", fg_color=config.SOCIAL_GMAIL_COLOR, hover_color=config.SOCIAL_GMAIL_HOVER, compound="left", command=lambda: open_social_and_track("gmail", gmail_url))
+                gmail_btn = ctk.CTkButton(email_expansion_frame, height=35, text="", font=btn_font, text_color="white", fg_color=config.SOCIAL_GMAIL_COLOR, hover_color=config.SOCIAL_GMAIL_HOVER, compound="left", command=handle_gmail_click)
                 gmail_btn.pack(fill="x", pady=(0, 5))
                 
                 try:
