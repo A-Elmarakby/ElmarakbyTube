@@ -16,6 +16,7 @@ import logging
 import time
 import sys
 import copy  # (Deep Copy)
+import config
 from core.utils import get_user_data_path
 
 # ==========================================
@@ -51,9 +52,11 @@ def get_default_schema():
     """
     return {
         # What: The version number of this file. 
-        # Source: Developer logic. 
-        # Goal: If we change the structure in the future, we make this 3 to reset the file.
-        "_schema_version": 2, 
+        # Source: Developer logic.
+        # Goal: Bump this whenever the structure changes (add/remove/rename fields).
+        #       On mismatch, load_analytics() either migrates or resets the file
+        #       depending on config.ANALYTICS_SCHEMA_CHANGE_MODE.
+        "_schema_version": 3,
         
         # What: The exact time the file was made (Unix Float).
         # Source: analytics.py.
@@ -68,9 +71,20 @@ def get_default_schema():
             "schema_repairs_count": 0,
             
             # What: The exact time when the last fix happened (Unix Float).
-            # Source: analytics.py. 
+            # Source: analytics.py.
             # Goal: Know when the hacking or file corruption happened.
-            "last_repair_timestamp": 0.0
+            "last_repair_timestamp": 0.0,
+
+            # What: Number of times the file was migrated to a newer schema
+            #       version while keeping the user's data (migrate mode).
+            # Source: analytics.py load_analytics() schema-change handler.
+            # Goal: Know how many app updates this user has lived through.
+            "schema_migrations_count": 0,
+
+            # What: The exact time of the last successful schema migration (Unix Float).
+            # Source: analytics.py.
+            # Goal: Know when the user was last upgraded to a new schema.
+            "last_migration_timestamp": 0.0
         },
 
         # Section 1: App Lifecycle (How the user opens and uses the app)
@@ -534,6 +548,55 @@ def init_analytics():
         data = load_analytics()
         save_analytics(data)
 
+def _is_type_compatible(saved_val, default_val):
+    """True if a saved leaf value may safely replace the schema default.
+    Guards against a tampered or very old file injecting the wrong type
+    (e.g. a string where a counter is expected) which would later make
+    increment_stat skip the key or, worse, crash on a math operation."""
+    # Containers must stay the same kind of container.
+    if isinstance(default_val, dict):
+        return isinstance(saved_val, dict)
+    if isinstance(default_val, list):
+        return isinstance(saved_val, list)
+    # bool is a subclass of int, so check it BEFORE the numeric branch
+    # otherwise True would be accepted as a valid counter value.
+    if isinstance(default_val, bool):
+        return isinstance(saved_val, bool)
+    if isinstance(default_val, (int, float)):
+        return isinstance(saved_val, (int, float)) and not isinstance(saved_val, bool)
+    if isinstance(default_val, str):
+        return isinstance(saved_val, str)
+    if default_val is None:
+        return True  # no type expectation -> accept whatever was saved
+    return type(saved_val) is type(default_val)
+
+
+def _migrate_schema(saved, default):
+    """Build a dict shaped EXACTLY like `default`, carrying compatible values
+    over from `saved`. This is the heart of 'migrate' mode:
+      - key only in default            -> default value    (brand-new field)
+      - key only in saved              -> dropped          (obsolete field)
+      - key in both, nested dict       -> recurse
+      - key in both, compatible leaf   -> keep saved value (the user's data)
+      - key in both, incompatible type -> default value    (defensive)
+    """
+    if not isinstance(saved, dict):
+        return copy.deepcopy(default)
+    result = {}
+    for key, default_val in default.items():
+        if key not in saved:
+            result[key] = copy.deepcopy(default_val)
+            continue
+        saved_val = saved[key]
+        if isinstance(default_val, dict):
+            result[key] = _migrate_schema(saved_val, default_val)
+        elif _is_type_compatible(saved_val, default_val):
+            result[key] = saved_val
+        else:
+            result[key] = copy.deepcopy(default_val)
+    return result
+
+
 def load_analytics():
     """Read data from RAM. Check disk only the first time. Return a SAFE COPY."""
     global _analytics_cache
@@ -565,11 +628,30 @@ def load_analytics():
             _analytics_cache = default_data
             return copy.deepcopy(_analytics_cache)
             
-        # 4. Schema Version Check
+        # 4. Schema Version Check — migrate the user's data, or reset it.
         check_data = bak_data if bak_data else json_data
         if check_data.get("_schema_version") != default_data["_schema_version"]:
-            logging.warning("Schema version changed! Resetting data to prevent crash.")
-            _analytics_cache = default_data
+            mode = str(getattr(config, "ANALYTICS_SCHEMA_CHANGE_MODE", "migrate")).strip().lower()
+
+            if mode == "reset":
+                # Old behavior: throw the file away, start fresh from defaults.
+                logging.warning("Schema version changed (reset mode): wiping data to fresh defaults.")
+                _analytics_cache = default_data
+                save_analytics(_analytics_cache)
+                return copy.deepcopy(_analytics_cache)
+
+            # Default = migrate: keep the user's numbers, add new fields at their
+            # defaults, drop obsolete fields, and stamp the new version.
+            logging.warning("Schema version changed (migrate mode): merging old data into the new schema.")
+            merged = _migrate_schema(check_data, default_data)
+            merged["_schema_version"] = default_data["_schema_version"]  # never keep the OLD version
+            try:
+                merged["0_data_integrity"]["schema_migrations_count"] += 1
+                merged["0_data_integrity"]["last_migration_timestamp"] = time.time()
+            except Exception:
+                pass
+            _analytics_cache = merged
+            save_analytics(_analytics_cache)
             return copy.deepcopy(_analytics_cache)
             
         needs_immediate_save = False

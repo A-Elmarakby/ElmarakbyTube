@@ -299,3 +299,17 @@ DUMMY_TEST_FILE_NAME = ".ElmarakbyTube_Path_Test.tmp"
 # How many days to wait before scanning the computer hardware again.
 # 180 days = ~6 months. This prevents slowing down the app startup.
 SYSTEM_INFO_CACHE_DAYS = 180
+
+# ==========================================
+# 14. ANALYTICS SCHEMA UPGRADE BEHAVIOR
+# ==========================================
+# What to do with the analytics file when the schema version changes
+# (i.e. when you add/remove/rename fields and bump _schema_version in analytics.py).
+#
+#   "migrate" → KEEP the user's accumulated numbers. New fields start at their
+#               default (0). Removed fields are dropped.
+#
+#   "reset"   → WIPE everything and start the file fresh from defaults (the old
+#               behavior).
+# Any unknown value is treated as "migrate" (the safe, non-destructive default).
+ANALYTICS_SCHEMA_CHANGE_MODE = "migrate"
