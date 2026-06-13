@@ -185,9 +185,10 @@ def _has_internet(timeout=2, ttl=5):
         return ok
 
 def fetch_size_for_single_video(row_data, quality):
+    global _current_session_youtube_block_counted
     if not state.fetch_event.is_set(): return
     if not row_data['frame'].winfo_exists(): return
-    if row_data['bytes_size'] != -1: return 
+    if row_data['bytes_size'] != -1: return
 
     app.after(0, lambda: layout.safe_ui_update(row_data['size_label'], text="...", text_color=config.COLOR_CYAN))
 
@@ -225,6 +226,12 @@ def fetch_size_for_single_video(row_data, quality):
                         state.consecutive_errors += 1
                         if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
                             state.fetch_event.clear()
+                        # Count the block ONCE per fetch session (the flag is
+                        # read/written under error_lock, so the pool threads are safe).
+                        if not _current_session_youtube_block_counted:
+                            try: increment_stat("6_resilience_and_errors", "youtube_blocks")
+                            except Exception: pass
+                            _current_session_youtube_block_counted = True
                 return
 
             file_size = info.get('filesize') or info.get('filesize_approx')
@@ -278,9 +285,11 @@ def fetch_all_sizes_worker():
         pass
     # -------------------------------------------
 
+    global _current_session_youtube_block_counted
     try:
         state.fetch_event.set()
         state.consecutive_errors = 0
+        _current_session_youtube_block_counted = False  # one block = one count per fetch session
         app.after(0, lambda: layout.update_global_status(f"Fetching sizes for {quality}...", config.COLOR_CYAN, ""))
         
         if state.fetch_btn and state.stop_fetch_btn:
@@ -298,8 +307,11 @@ def fetch_all_sizes_worker():
         if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
             app.after(0, lambda: layout.update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
             app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error", custom_height=230))
-            try: increment_stat("6_resilience_and_errors", "youtube_blocks")
-            except Exception: pass
+            # Only if a per-video block wasn't already counted this session.
+            if not _current_session_youtube_block_counted:
+                try: increment_stat("6_resilience_and_errors", "youtube_blocks")
+                except Exception: pass
+                _current_session_youtube_block_counted = True
         elif state.fetch_event.is_set():
             blocked_count = sum(1 for r in selected_rows if r['bytes_size'] == 0)
             if blocked_count > 0:
