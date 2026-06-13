@@ -8,6 +8,7 @@ import sys
 import logging
 import time # Added to calculate total usage time
 import glob
+import socket # Used for a quick "is the internet up?" check during size fetch
 
 # Save the exact time the app started
 APP_START_TIME = time.time()
@@ -148,8 +149,40 @@ def global_hardware_shortcuts(event):
             except: pass
             return "break"
 
+# Cache the connectivity answer so a burst of failing rows doesn't each pay a
+# full socket timeout. One real probe is shared for a few seconds across all
+# fetch threads (the network state barely changes within a single fetch burst).
+_internet_check = {"ts": 0.0, "ok": True}
+_internet_check_lock = threading.Lock()
+
+def _has_internet(timeout=2, ttl=5):
+    """Quick, cached check: can we reach the internet at all?
+    Used to tell a real YouTube block apart from a dropped connection when a
+    size fetch comes back empty. Connects to a well-known host; the result is
+    cached for `ttl` seconds so 200 failing rows don't trigger 200 probes.
+    The probe runs under the lock so concurrent callers reuse one result
+    instead of all timing out at once."""
+    now = time.time()
+    with _internet_check_lock:
+        if now - _internet_check["ts"] < ttl:
+            return _internet_check["ok"]
+
+        ok = False
+        for host, port in (("1.1.1.1", 443), ("8.8.8.8", 53)):
+            try:
+                sock = socket.create_connection((host, port), timeout=timeout)
+                sock.close()
+                ok = True
+                break
+            except OSError:
+                continue
+
+        _internet_check["ts"] = time.time()
+        _internet_check["ok"] = ok
+        return ok
+
 def fetch_size_for_single_video(row_data, quality):
-    if not state.fetch_event.is_set(): return 
+    if not state.fetch_event.is_set(): return
     if not row_data['frame'].winfo_exists(): return
     if row_data['bytes_size'] != -1: return 
 
@@ -176,11 +209,19 @@ def fetch_size_for_single_video(row_data, quality):
                 
             if not info:
                 row_data['bytes_size'] = 0
-                app.after(0, lambda: layout.safe_ui_update(row_data['size_label'], text="Blocked", text_color=config.COLOR_RED))
-                with state.error_lock:
-                    state.consecutive_errors += 1
-                    if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
-                        state.fetch_event.clear()
+                if not _has_internet():
+                    # The internet itself is down: this is a network failure,
+                    # NOT a YouTube block. Do not feed the block circuit-breaker
+                    # so the youtube_blocks stat stays clean.
+                    app.after(0, lambda: layout.safe_ui_update(row_data['size_label'], text="No Internet", text_color=config.COLOR_RED))
+                else:
+                    # We are online but got nothing back: a genuine block,
+                    # private, or region-locked video.
+                    app.after(0, lambda: layout.safe_ui_update(row_data['size_label'], text="Blocked", text_color=config.COLOR_RED))
+                    with state.error_lock:
+                        state.consecutive_errors += 1
+                        if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
+                            state.fetch_event.clear()
                 return
 
             file_size = info.get('filesize') or info.get('filesize_approx')
@@ -357,26 +398,35 @@ def fetch_video_data():
     except Exception as e:
         logging.error(f"Search Failed for URL '{url}'. Reason: {str(e)}") # Save broken link error
         
-        # --- Analytics: Separate network failures from genuinely invalid links ---
-        # fetch_failures = ANY failed read (superset). invalid_links_entered counts
-        # ONLY when the link itself is bad, NOT when the internet/network dropped.
+        # --- Decide the REAL reason in order, so the user sees the truth and
+        #     the stat lands in the right bucket:
+        #       1) Internet down?            -> network failure (reliable probe)
+        #       2) Online + block words?     -> YouTube temporarily blocked us
+        #       3) Online, no block words?   -> the link itself is bad
         err = str(e).lower()
-        network_markers = (
-            "getaddrinfo", "timed out", "timeout", "connection", "temporary failure",
-            "urlopen", "unable to download webpage", "[errno", "ssl", "reset by peer",
-            "network is unreachable", "10054", "10060",
-        )
-        is_network = any(m in err for m in network_markers)
+        youtube_block_markers = ("http error 429", "too many requests", "not a bot")
+        is_youtube_block = any(m in err for m in youtube_block_markers)
+        online = _has_internet()
+
         try:
-            increment_stat("6_resilience_and_errors", "fetch_failures")
-            if not is_network:
+            increment_stat("6_resilience_and_errors", "fetch_failures")  # any failure
+            if not online:
+                # Network is down: not the link's fault, and not a block.
+                shown_msg = messages.MSG_CONN_ERROR
+            elif is_youtube_block:
+                # YouTube blocked us for too many requests (the lingering block).
+                increment_stat("6_resilience_and_errors", "youtube_blocks")
+                shown_msg = messages.MSG_BLOCKED
+            else:
+                # Online and not a known block -> the link itself is bad.
                 increment_stat("2_search_behavior", "invalid_links_entered")
+                shown_msg = messages.MSG_CONN_ERROR
         except Exception:
-            pass
+            shown_msg = messages.MSG_CONN_ERROR
         # ----------------------------------------
-        
+
         app.after(0, lambda: layout.update_global_status(messages.STATUS_SEARCH_FAILED, config.COLOR_RED, ""))
-        app.after(0, lambda e=e: custom_msg_box(messages.TITLE_ERROR, messages.MSG_CONN_ERROR, "error"))
+        app.after(0, lambda m=shown_msg: custom_msg_box(messages.TITLE_ERROR, m, "error"))
 
 def on_search_click():
     threading.Thread(target=fetch_video_data, daemon=True).start()
@@ -537,6 +587,13 @@ def _download_process(rows_to_download, quality, save_path, is_playlist_session)
                     # Bug 5 FIX: Use the parameter instead of stale UI counts
                     if is_playlist_session:
                         increment_stat("3_download_stats", "total_videos_failed", sub_category="playlists")
+                    # A YouTube block during download (HTTP 429 / bot challenge)
+                    # is reliably caught HERE: yt-dlp raises and the message lands
+                    # in str(e). Counted only here (not in the downloader logger)
+                    # to avoid double-counting the same block.
+                    err = str(e).lower()
+                    if any(m in err for m in ("http error 429", "too many requests", "not a bot")):
+                        increment_stat("6_resilience_and_errors", "youtube_blocks")
                 except Exception: pass
                 # --------------------------------------------------
                 

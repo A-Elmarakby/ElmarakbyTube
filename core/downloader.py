@@ -53,28 +53,10 @@ def _record_network_retry(msg):
         except Exception:
             pass
 
-# Unambiguous YouTube-block signatures only (rate-limit / bot challenge).
-# We deliberately exclude vague messages like "video unavailable" so we do
-# not mis-attribute a deleted/private video as a block.
-_YT_BLOCK_MARKERS = (
-    "sign in to confirm you're not a bot",
-    "sign in to confirm youre not a bot",
-    "http error 429",
-    "too many requests",
-)
-
-def _record_youtube_block(msg):
-    """Count YouTube blocks that happen during the DOWNLOAD phase.
-    The fetch (size) phase is counted separately in main.py when fetching
-    auto-stops after MAX_CONSECUTIVE_ERRORS, so there is no double-count:
-    these are two different phases of the app."""
-    low = msg.lower()
-    if any(marker in low for marker in _YT_BLOCK_MARKERS):
-        try:
-            from core.analytics import increment_stat
-            increment_stat("6_resilience_and_errors", "youtube_blocks")
-        except Exception:
-            pass
+# NOTE: YouTube download-phase blocks (HTTP 429 / bot challenge) are counted in
+# main.py's download except block, where yt-dlp raises and the message reliably
+# arrives as str(e). Counting them here in the logger was unreliable (the logger
+# error channel did not always fire) and risked double-counting, so it was removed.
 
 class DownloadLogger:
     # A simple tool to check if the file is already downloaded
@@ -101,7 +83,6 @@ class DownloadLogger:
         
     def error(self, msg):
         logging.error(f"[yt-dlp] {msg}") # Save to file
-        _record_youtube_block(msg)
         if config.SHOW_TERMINAL_LOGS: print(msg)
 
 def download_single_video(url, title, save_path, quality, progress_callback, is_cancelled):
