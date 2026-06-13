@@ -17,6 +17,9 @@ APP_START_TIME = time.time()
 _current_session_playlist_counted = False
 # Analytics: Flag to prevent counting the same quality choice multiple times in one session
 _current_session_quality_counted = False
+# Analytics: Flag to count a YouTube block only ONCE per download session
+# (one block episode that fails 20 videos must not be counted as 20 blocks)
+_current_session_youtube_block_counted = False
 
 # 1. Start logger FIRST (Before importing anything else to catch missing files)
 try:
@@ -450,6 +453,11 @@ def find_downloaded_file(save_path, title):
 
 # Added is_playlist_session parameter to fix Bug 5
 def _download_process(rows_to_download, quality, save_path, is_playlist_session):
+    # Reset the per-session block flag: one block episode in this batch counts
+    # as ONE youtube_block no matter how many videos it fails.
+    global _current_session_youtube_block_counted
+    _current_session_youtube_block_counted = False
+
     failed_count = 0
     for row_data in rows_to_download:
         if not state.download_event.is_set(): break 
@@ -590,10 +598,13 @@ def _download_process(rows_to_download, quality, save_path, is_playlist_session)
                     # A YouTube block during download (HTTP 429 / bot challenge)
                     # is reliably caught HERE: yt-dlp raises and the message lands
                     # in str(e). Counted only here (not in the downloader logger)
-                    # to avoid double-counting the same block.
+                    # to avoid double-counting, and only ONCE per session so a
+                    # block that fails 20 videos counts as one block, not 20.
                     err = str(e).lower()
                     if any(m in err for m in ("http error 429", "too many requests", "not a bot")):
-                        increment_stat("6_resilience_and_errors", "youtube_blocks")
+                        if not _current_session_youtube_block_counted:
+                            increment_stat("6_resilience_and_errors", "youtube_blocks")
+                            _current_session_youtube_block_counted = True
                 except Exception: pass
                 # --------------------------------------------------
                 
