@@ -641,11 +641,9 @@ def show_welcome_onboarding(parent_window=None):
     dialog.title(messages.TITLE_WELCOME)
     
     add_dialog_icon(dialog)
-    
-    center_toplevel(dialog, 450, 220, parent_window)
+    dialog.withdraw()  # build hidden, reveal once fully sized (no flicker/jump)
     dialog.transient(parent_window)
-    dialog.grab_set()
-    
+
     btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     
     def on_welcome_close():
@@ -660,7 +658,7 @@ def show_welcome_onboarding(parent_window=None):
         dialog, placeholder_text=apply_bidi(messages.PLACEHOLDER_NAME), 
         placeholder_text_color="#999999", width=280, height=40, font=btn_font, justify="center"
     )
-    name_entry.pack(pady=10)
+    name_entry.pack(pady=(10, 20))  # gap above the button = 20
     
     def save_name():
         name = name_entry.get().strip()
@@ -677,16 +675,19 @@ def show_welcome_onboarding(parent_window=None):
             greet_dialog.title(messages.TITLE_WELCOME)
             
             add_dialog_icon(greet_dialog)
-            
-            center_toplevel(greet_dialog, 500, 200, parent_window)
-            greet_dialog.transient(parent_window) 
-            greet_dialog.grab_set()     
-            
+            greet_dialog.withdraw()  # build hidden, reveal once fully sized (no flicker/jump)
+            greet_dialog.transient(parent_window)
+
             config.play_sound("success")
-            ctk.CTkLabel(greet_dialog, text=apply_bidi(greet_msg), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY, "bold")).pack(pady=40, padx=20)
+            ctk.CTkLabel(greet_dialog, text=apply_bidi(greet_msg), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY, "bold")).pack(pady=(30, 20), padx=20)
             btn_welcome = ctk.CTkButton(greet_dialog, text=apply_bidi(messages.WELCOME_BTN), font=btn_font, fg_color=config.WELCOME_BTN_COLOR, hover=True, hover_color=config.WELCOME_BTN_HOVER, width=config.WELCOME_BTN_WIDTH, command=greet_dialog.destroy)
             btn_welcome.pack()
-            
+
+            # Fit the window with the same 25px bottom margin as the other dialogs.
+            center_toplevel(greet_dialog, 500, _fit_popup_height(greet_dialog, extra=25), parent_window)
+            greet_dialog.deiconify()
+            greet_dialog.grab_set()
+
             greet_dialog.bind("<Return>", lambda event: greet_dialog.destroy())
             greet_dialog.bind("<KP_Enter>", lambda event: greet_dialog.destroy())
             greet_dialog.bind("<Escape>", lambda event: greet_dialog.destroy())
@@ -696,7 +697,12 @@ def show_welcome_onboarding(parent_window=None):
             custom_alert_dialog(messages.TITLE_ALERT, error_msg, parent_window)
             
     btn_confirm = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONFIRM_NAME), font=btn_font, fg_color=config.COLOR_MAGENTA, hover_color=config.COLOR_MAGENTA_HOVER, command=save_name)
-    btn_confirm.pack(pady=10)
+    btn_confirm.pack()
+
+    # Fit the window with the same 25px bottom margin as the other dialogs.
+    center_toplevel(dialog, 450, _fit_popup_height(dialog, extra=25), parent_window)
+    dialog.deiconify()
+    dialog.grab_set()
 
     # Keyboard shortcuts to save the name instantly
     dialog.bind("<Return>", lambda event: save_name())
