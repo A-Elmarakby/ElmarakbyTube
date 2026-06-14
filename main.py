@@ -306,7 +306,7 @@ def fetch_all_sizes_worker():
         
         if state.consecutive_errors >= config.MAX_CONSECUTIVE_ERRORS:
             app.after(0, lambda: layout.update_global_status("Fetching stopped automatically: YouTube blocked the connection.", config.COLOR_RED, ""))
-            app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error", custom_height=230))
+            app.after(0, lambda: custom_msg_box(messages.TITLE_ERROR, messages.MSG_BLOCKED, "error"))
             # Only if a per-video block wasn't already counted this session.
             if not _current_session_youtube_block_counted:
                 try: increment_stat("6_resilience_and_errors", "youtube_blocks")

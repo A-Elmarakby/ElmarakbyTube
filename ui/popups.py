@@ -93,7 +93,18 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
     # Set icon IMMEDIATELY before centering or grabbing focus
     add_dialog_icon(dialog)
     
-    height = custom_height if custom_height else config.POPUP_HEIGHT
+    # Dynamic height so a long message is never clipped and the OK button (pinned
+    # to the bottom below) always stays visible. Capped at ~85% of the screen.
+    if custom_height:
+        height = custom_height
+    else:
+        _text = str(message)
+        _lines = sum(max(1, (len(line) // 38) + 1) for line in _text.split('\n'))
+        try:
+            _max_h = min(560, int(dialog.winfo_screenheight() * 0.85))
+        except Exception:
+            _max_h = 560
+        height = max(config.POPUP_HEIGHT, min(180 + _lines * 28, _max_h))
     center_toplevel(dialog, config.POPUP_WIDTH, height, parent_window)
     dialog.transient(parent_window)
     dialog.grab_set()
@@ -123,11 +134,12 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
         ctk.CTkLabel(title_frame, text=f"{icon} ", font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="left")
         ctk.CTkLabel(title_frame, text=title, font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_TITLE, "bold"), text_color=color).pack(side="left")
     
-    lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400, justify="center")
-    lbl_msg.pack(pady=(0, 20), padx=20)
-    
+    # Pin the OK button to the bottom FIRST so a long message can never push it off-screen.
     btn_ok = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy)
-    btn_ok.pack(pady=(0, 20))
+    btn_ok.pack(side="bottom", pady=(10, 20))
+
+    lbl_msg = ctk.CTkLabel(dialog, text=apply_bidi(message), font=(messages.FONT_FAMILY, messages.FONT_SIZE_POPUP_BODY), wraplength=400, justify="center")
+    lbl_msg.pack(side="top", expand=True, pady=(0, 10), padx=20)
     
     # Enter maps to the button's command, Escape maps explicitly to destroy
     dialog.bind("<Return>", lambda event: btn_ok.invoke())
