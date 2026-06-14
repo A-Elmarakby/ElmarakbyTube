@@ -106,6 +106,7 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
     # Set icon IMMEDIATELY before centering or grabbing focus
     add_dialog_icon(dialog)
     
+    dialog.withdraw()  # build hidden, reveal once fully sized (no flicker/jump)
     dialog.transient(parent_window)
     config.play_sound(msg_type)
     
@@ -141,6 +142,7 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
     # Fit the window to the content (no wasted space); OK button stays visible.
     height = _fit_popup_height(dialog, custom_height, extra=5)
     center_toplevel(dialog, config.POPUP_WIDTH, height, parent_window)
+    dialog.deiconify()  # reveal at the final size/position
     dialog.grab_set()
     
     # Enter maps to the button's command, Escape maps explicitly to destroy
@@ -162,6 +164,7 @@ def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
     
     add_dialog_icon(dialog)
     
+    dialog.withdraw()  # build hidden, reveal once fully sized (no flicker/jump)
     dialog.transient(parent_window)
     config.play_sound("warning")
     result = [False]
@@ -198,6 +201,7 @@ def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
 
     # Fit the window to the content so there is no empty space below the buttons.
     center_toplevel(dialog, config.POPUP_WIDTH, _fit_popup_height(dialog, extra=25), parent_window)
+    dialog.deiconify()
     dialog.grab_set()
 
     # Escape always cancels (Safe exit)
@@ -559,6 +563,7 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     
     add_dialog_icon(dialog)
     
+    dialog.withdraw()  # build hidden, reveal once fully sized (no flicker/jump)
     dialog.transient(parent_window)
     config.play_sound("warning")
     result = ["cancel"]
@@ -581,6 +586,7 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
 
     # Fit the window to the content so there is no empty space below the buttons.
     center_toplevel(dialog, 450, _fit_popup_height(dialog, extra=25), parent_window)
+    dialog.deiconify()
     dialog.grab_set()
 
     # Escape always stays safely in the app (Safe exit)
