@@ -139,8 +139,8 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
     btn_ok = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy)
     btn_ok.pack(pady=(0, 20))
 
-    # Fit the window to the content (no wasted space); OK button stays visible.
-    height = _fit_popup_height(dialog, custom_height, extra=5)
+    # Fit the window to the content, leaving a small breathing space below the OK button.
+    height = _fit_popup_height(dialog, custom_height, extra=25)
     center_toplevel(dialog, config.POPUP_WIDTH, height, parent_window)
     dialog.deiconify()  # reveal at the final size/position
     dialog.grab_set()
