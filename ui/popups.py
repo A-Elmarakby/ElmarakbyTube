@@ -716,11 +716,9 @@ def show_1gb_warning_dialog(parent_window=None):
     dialog.title(apply_bidi(messages.TITLE_1GB_WARNING))
     
     add_dialog_icon(dialog)
-    
-    center_toplevel(dialog, 400, 220, parent_window)
+    dialog.withdraw()  # build hidden, reveal once fully sized (no flicker/jump)
+
     dialog.transient(parent_window)
-    dialog.grab_set()
-    
     # Play the dedicated data warning audio type configured in config
     config.play_sound("data_warning")
     
@@ -730,7 +728,7 @@ def show_1gb_warning_dialog(parent_window=None):
     
     # Checkbox for opt-out preference
     chk = ctk.CTkCheckBox(dialog, text=apply_bidi(messages.CHK_DONT_SHOW), font=(messages.FONT_FAMILY, messages.FONT_SIZE_MAIN), checkbox_height=20, checkbox_width=20)
-    chk.pack(pady=(0, 15))
+    chk.pack(pady=(0, 20))  # gap above the button = 20 (matches the other dialogs)
     
     def on_continue():
         # Save choice to hard drive if user checked the box (1 means checked)
@@ -741,7 +739,12 @@ def show_1gb_warning_dialog(parent_window=None):
     btn_font = (messages.FONT_FAMILY, messages.FONT_SIZE_MAIN, "bold")
     btn_continue = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_CONTINUE), font=btn_font, fg_color="#28a745", hover_color="#218838", width=120, command=on_continue)
     btn_continue.pack()
-    
+
+    # Fit the window with the same 25px bottom margin as the other dialogs.
+    center_toplevel(dialog, 400, _fit_popup_height(dialog, extra=25), parent_window)
+    dialog.deiconify()
+    dialog.grab_set()
+
     # Enter triggers the main button's command, Escape closes without saving
     dialog.bind("<Return>", lambda event: btn_continue.invoke())
     dialog.bind("<KP_Enter>", lambda event: btn_continue.invoke())
