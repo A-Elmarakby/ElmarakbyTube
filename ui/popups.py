@@ -73,6 +73,19 @@ def center_toplevel(top, width, height, parent_window=None):
         y = (screen_height // 2) - (height // 2)
     top.geometry(f"{width}x{height}+{x}+{y}")
 
+def _fit_popup_height(dialog, custom_height=None, extra=20):
+    """Return a height that exactly fits the dialog's current content (so there is
+    no wasted empty space), capped at ~85% of the screen. Call AFTER the widgets
+    are packed. Falls back to POPUP_HEIGHT if measuring isn't possible."""
+    if custom_height:
+        return custom_height
+    try:
+        dialog.update_idletasks()
+        max_h = min(560, int(dialog.winfo_screenheight() * 0.85))
+        return max(150, min(dialog.winfo_reqheight() + extra, max_h))
+    except Exception:
+        return config.POPUP_HEIGHT
+
 # ==========================================
 # Core Message Boxes
 # ==========================================
@@ -125,18 +138,8 @@ def custom_msg_box(title, message, msg_type="error", parent_window=None, custom_
     btn_ok = ctk.CTkButton(dialog, text=apply_bidi(messages.BTN_OK), fg_color="#555", hover_color="#333", width=100, command=dialog.destroy)
     btn_ok.pack(pady=(0, 20))
 
-    # Size the window to EXACTLY fit the content: snug for short messages, taller
-    # for long ones (capped at ~85% of the screen). No wasted space, and the OK
-    # button below always stays visible.
-    if custom_height:
-        height = custom_height
-    else:
-        try:
-            dialog.update_idletasks()
-            _max_h = min(560, int(dialog.winfo_screenheight() * 0.85))
-            height = max(config.POPUP_HEIGHT, min(dialog.winfo_reqheight(), _max_h))
-        except Exception:
-            height = config.POPUP_HEIGHT
+    # Fit the window to the content (no wasted space); OK button stays visible.
+    height = _fit_popup_height(dialog, custom_height, extra=5)
     center_toplevel(dialog, config.POPUP_WIDTH, height, parent_window)
     dialog.grab_set()
     
@@ -159,10 +162,7 @@ def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
     
     add_dialog_icon(dialog)
     
-    center_toplevel(dialog, config.POPUP_WIDTH, config.POPUP_HEIGHT, parent_window)
     dialog.transient(parent_window)
-    dialog.grab_set()
-
     config.play_sound("warning")
     result = [False]
     def set_res(val):
@@ -195,7 +195,11 @@ def custom_ask_yes_no(title, message, icon="⚠️", parent_window=None):
     
     btn_yes = ctk.CTkButton(btn_frame, text=apply_bidi(messages.BTN_YES), font=big_btn_font, fg_color="#28a745", hover_color="#218838", width=110, height=30, command=lambda: set_res(True))
     btn_yes.pack(side="left", padx=10)
-    
+
+    # Fit the window to the content so there is no empty space below the buttons.
+    center_toplevel(dialog, config.POPUP_WIDTH, _fit_popup_height(dialog, extra=25), parent_window)
+    dialog.grab_set()
+
     # Escape always cancels (Safe exit)
     dialog.bind("<Escape>", lambda event: set_res(False))
     
@@ -555,10 +559,7 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     
     add_dialog_icon(dialog)
     
-    center_toplevel(dialog, 450, 200, parent_window)
     dialog.transient(parent_window)
-    dialog.grab_set()
-    
     config.play_sound("warning")
     result = ["cancel"]
     def set_res(val):
@@ -577,7 +578,11 @@ def v2_exit_dialog(title, message, green_text, red_text, parent_window=None):
     
     btn_stay = ctk.CTkButton(btn_frame, text=apply_bidi(green_text), font=big_btn_font, fg_color=config.EXIT_STAY_COLOR, hover_color=config.EXIT_STAY_HOVER, width=110, height=30, command=lambda: set_res("stay"))
     btn_stay.pack(side="left", padx=10)
-    
+
+    # Fit the window to the content so there is no empty space below the buttons.
+    center_toplevel(dialog, 450, _fit_popup_height(dialog, extra=25), parent_window)
+    dialog.grab_set()
+
     # Escape always stays safely in the app (Safe exit)
     dialog.bind("<Escape>", lambda event: set_res("stay"))
     
