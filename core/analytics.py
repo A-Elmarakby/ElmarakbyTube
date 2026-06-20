@@ -26,6 +26,10 @@ from core.utils import get_user_data_path
 # If they write together, the file will break.
 _analytics_lock = threading.RLock()
 
+# Upper sanity bound for any recorded speed (10 Gbps). Values above this are
+# measurement errors (division by near-zero time) and must never be stored.
+_MAX_REALISTIC_SPEED_MBPS = 10_000
+
 # ==========================================
 # 3. FILE PATH HELPER
 # ==========================================
@@ -614,12 +618,14 @@ def load_analytics():
         json_data = None
         try:
             with open(json_path, "r", encoding="utf-8") as f: json_data = json.load(f)
+            if not isinstance(json_data, dict): json_data = None
         except Exception as e:
             logging.debug(f"JSON Read Error: {str(e)}")
-            
+
         bak_data = None
         try:
             with open(bak_path, "r", encoding="utf-8") as f: bak_data = json.load(f)
+            if not isinstance(bak_data, dict): bak_data = None
         except Exception as e:
             logging.debug(f"BAK Read Error: {str(e)}")
             
@@ -630,7 +636,12 @@ def load_analytics():
             
         # 4. Schema Version Check — migrate the user's data, or reset it.
         check_data = bak_data if bak_data else json_data
-        if check_data.get("_schema_version") != default_data["_schema_version"]:
+        saved_version = check_data.get("_schema_version")
+        try:
+            saved_version = int(saved_version)
+        except (TypeError, ValueError):
+            saved_version = None
+        if saved_version != default_data["_schema_version"]:
             mode = str(getattr(config, "ANALYTICS_SCHEMA_CHANGE_MODE", "migrate")).strip().lower()
 
             if mode == "reset":
@@ -660,16 +671,18 @@ def load_analytics():
         if json_data and bak_data:
             if json_data != bak_data:
                 logging.warning("Tampering detected! JSON does not match BAK. Restoring backup.")
-                bak_data["0_data_integrity"]["schema_repairs_count"] += 1
+                bak_data.setdefault("0_data_integrity", {})
+                bak_data["0_data_integrity"]["schema_repairs_count"] = bak_data["0_data_integrity"].get("schema_repairs_count", 0) + 1
                 bak_data["0_data_integrity"]["last_repair_timestamp"] = time.time()
                 _analytics_cache = bak_data
                 needs_immediate_save = True
             else:
                 _analytics_cache = json_data
-                
+
         elif bak_data and not json_data:
             logging.warning("JSON file missing! Restoring from BAK.")
-            bak_data["0_data_integrity"]["schema_repairs_count"] += 1
+            bak_data.setdefault("0_data_integrity", {})
+            bak_data["0_data_integrity"]["schema_repairs_count"] = bak_data["0_data_integrity"].get("schema_repairs_count", 0) + 1
             bak_data["0_data_integrity"]["last_repair_timestamp"] = time.time()
             _analytics_cache = bak_data
             needs_immediate_save = True
@@ -716,6 +729,8 @@ def increment_stat(category, key, amount=1, sub_category=None):
     Safely increment a number in the analytics file.
     Supports deep nesting for quality_preferences and playlist_presets.
     """
+    if amount < 0:
+        return
     with _analytics_lock:
         try:
             data = load_analytics()
@@ -745,7 +760,7 @@ def increment_stat(category, key, amount=1, sub_category=None):
 
 def update_speed_stat(speed_mbps):
     """Check and update the highest and lowest internet speed from downloads."""
-    if speed_mbps <= 0:
+    if speed_mbps <= 0 or speed_mbps > _MAX_REALISTIC_SPEED_MBPS:
         return
         
     with _analytics_lock:
@@ -768,7 +783,7 @@ def update_speed_stat(speed_mbps):
 
 def record_speedtest_result(speed_mbps):
     """Save the independent network speed test result safely."""
-    if speed_mbps <= 0:
+    if speed_mbps <= 0 or speed_mbps > _MAX_REALISTIC_SPEED_MBPS:
         return
 
     with _analytics_lock:

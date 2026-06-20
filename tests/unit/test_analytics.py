@@ -231,10 +231,8 @@ class TestIncrementBehaviour:
         analytics.increment_stat("6_resilience_and_errors", "youtube_blocks", amount=0)
         assert analytics.load_analytics()["6_resilience_and_errors"]["youtube_blocks"] == 0
 
-    @pytest.mark.xfail(strict=False,
-                       reason="Phase 1 Bug B5: increment_stat does not guard negative amount → counter can go negative")
     def test_negative_amount_should_not_go_negative(self, setup_analytics):
-        """DESIRED: a counter must never be driven below zero."""
+        """B5 fixed: a counter must never be driven below zero."""
         analytics.init_analytics()
         analytics.increment_stat("6_resilience_and_errors", "youtube_blocks", amount=-5)
         val = analytics.load_analytics()["6_resilience_and_errors"]["youtube_blocks"]
@@ -288,10 +286,8 @@ class TestNetworkProfile:
         assert st["highest_mbps"] == 27.09
         assert st["lowest_mbps"] == 10.0
 
-    @pytest.mark.xfail(strict=False,
-                       reason="Phase 1 Bug B2: update_speed_stat has no upper sanity bound → impossible speeds stored")
     def test_giant_speed_should_be_rejected(self, setup_analytics):
-        """DESIRED: 1e9 Mbps is physically impossible and must be rejected/clamped."""
+        """B2 fixed: 1e9 Mbps is physically impossible and must be rejected."""
         analytics.init_analytics()
         analytics.update_speed_stat(1e9)
         s = analytics.load_analytics()["4_network_profile"]["download_speeds"]
@@ -438,29 +434,23 @@ class TestIntegrityAndRecovery:
         assert data["2_search_behavior"]["total_links_searched"] == 33
         assert data["0_data_integrity"]["schema_repairs_count"] == 1
 
-    @pytest.mark.xfail(strict=False,
-                       reason="Phase 1 Bug C1: valid-JSON-but-not-a-dict ([..]/42/'x') crashes load_analytics → app refuses to start")
     def test_nondict_json_list_should_not_crash(self, setup_analytics):
-        """DESIRED: a JSON array payload must fall back to defaults, not crash."""
+        """C1 fixed: a JSON array payload must fall back to defaults, not crash."""
         setup_analytics["json"].write_text("[1, 2, 3]", encoding="utf-8")
         analytics._analytics_cache = None
         analytics.init_analytics()  # currently raises AttributeError
         data = analytics.load_analytics()
         assert isinstance(data, dict) and data["_schema_version"] == 3
 
-    @pytest.mark.xfail(strict=False,
-                       reason="Phase 1 Bug C1: truthy non-dict in the BACKUP crashes the version check")
     def test_nondict_backup_number_should_not_crash(self, setup_analytics):
-        """DESIRED: a corrupt backup containing `42` must not crash recovery."""
+        """C1 fixed: a corrupt backup containing `42` must not crash recovery."""
         setup_analytics["bak"].write_text("42", encoding="utf-8")
         analytics._analytics_cache = None
         data = analytics.load_analytics()
         assert isinstance(data, dict) and data["_schema_version"] == 3
 
-    @pytest.mark.xfail(strict=False,
-                       reason="Phase 1 Bug C2: schema_version as string '3' != int 3 → endless re-migration")
     def test_string_schema_version_should_not_remigrate(self, setup_analytics):
-        """DESIRED: '3' (string) should be treated as version 3 (no migration)."""
+        """C2 fixed: '3' (string) should be treated as version 3 (no migration)."""
         d = analytics.get_default_schema()
         d["_schema_version"] = "3"                      # tampered type
         payload = json.dumps(d)
